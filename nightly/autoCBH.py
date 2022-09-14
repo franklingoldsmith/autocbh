@@ -1,11 +1,15 @@
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem import AllChem, Draw
 import igraph
+from rdkit.Chem.Draw import IPythonConsole
+IPythonConsole.drawOptions.addAtomIndices = True
+from autoCBH_funcs import mol2graph, graph2mol
 from copy import deepcopy
 from collections import defaultdict
 
 class buildCBH:
-    def __init__(self, smile):
+    def __init__(self, smile, saturate=1):
         """
         Build the CBH scheme for a given SMILES string of a molecule. \
             It gets the RDKit molecule object and graph representations of the SMILES.
@@ -13,6 +17,9 @@ class buildCBH:
         ARGUMENTS
         ---------
         :smile:     [str] SMILES string represnting a molecule
+        :saturate:  [int or str] (default=1 or 'H') The integer or string representation of the \
+            default molecule that will saturate the heavy atoms. \
+            Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17).
         """
         self.mol = Chem.MolFromSmiles(smile) # RDkit molecule object
         self.smile = Chem.MolToSmiles(self.mol) # rewrite SMILES str in standard forms
@@ -21,10 +28,10 @@ class buildCBH:
         self.graph_adj = np.array(self.graph.get_adjacency().data) # Graph Adjacency Matrix
         self.graph_dist = np.array(self.graph.shortest_paths()) # Matrix holding distances between vertices
 
-        self.cbh_pdts, self.cbh_rcts = self.build_scheme()
+        self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate)
 
 
-    def atom_centric(self, dist, return_smile=False, atom_indices=[]) -> list:
+    def atom_centric(self, dist, return_smile=False, atom_indices=[], saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species produced by \
             atom-centric CBH steps.
@@ -51,13 +58,15 @@ class buildCBH:
             atom_inds = np.where(self.graph_dist[i] <= dist)[0]
             # create rdkit mol objects from subgraph
             residual = graph2mol(self.graph.subgraph(atom_inds))
+            if saturate != 1: 
+                residual = self.process_replace_atoms(residual, saturate)
             if return_smile:
-                residual = Chem.MolToSmiles(residual)
+                residual = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(residual)))
             residuals.append(residual)
         return residuals
 
 
-    def bond_centric(self, dist, return_smile=False) -> list:
+    def bond_centric(self, dist, return_smile=False, saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species produced by \
             bond-centric CBH steps.
@@ -86,20 +95,24 @@ class buildCBH:
             edge_inds = list(set([x[-1] for x in gsp_s_refine] + [x[-1] for x in gsp_t_refine]))
             # create rdkit mol objects from subgraph
             residual = graph2mol(self.graph.subgraph(edge_inds))
+            if saturate != 1: 
+                residual = self.process_replace_atoms(residual, saturate)
             if return_smile:
-                residual = Chem.MolToSmiles(residual)
+                residual = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(residual)))
             # print(residual)
             residuals.append(residual)
         return residuals
 
 
-    def build_scheme(self):
+    def build_scheme(self, saturate=1):
         """
         Build CBH scheme and store the SMILES strings in dictionaries for each CBH level.
 
         ARGUMENTS
         ---------
-        None 
+        :saturate:  [int or str] (default=1 or 'H') The integer or string representation of the \
+            default molecule that will saturate the heavy atoms. \
+            Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17).
 
         RETURNS
         -------
@@ -110,6 +123,9 @@ class buildCBH:
         :cbh_rcts: [nested dict] The reactant side of each CBH level \
             {cbh_level: {residual SMILES : num occurences}}
         """
+
+        if type(saturate) == str:
+                saturate = Chem.AtomFromSmiles(saturate).GetAtomicNum()
 
         cbh_pdts = {} # CBH level products
         cbh_rcts = {} # CBH level reactants
@@ -126,14 +142,15 @@ class buildCBH:
         while self.smile not in molec_list:
             # even cbh level --> atom centric
             if cbh_level % 2 == 0: 
-                residuals = self.atom_centric(cbh_level/2, True, [])
+                residuals = self.atom_centric(cbh_level/2, True, [], saturate=saturate)
+                print(residuals)
             # odd cbh level --> bond centric
             else: 
-                residuals = self.bond_centric(np.floor(cbh_level/2), True)
+                residuals = self.bond_centric(np.floor(cbh_level/2), True, saturate)
                 # if branch_idx has values
                 if len(branch_idx) != 0: 
                     # THIS NEEDS TO SCALE WITH atom.GetDegrees()-2
-                    branches = self.atom_centric(np.floor(cbh_level/2), True, branch_idx)
+                    branches = self.atom_centric(np.floor(cbh_level/2), True, branch_idx, saturate)
                     new_branches = []
                     for i in range(len(branches)):
                         for j in range(branch_degrees[i]-2):
@@ -142,7 +159,7 @@ class buildCBH:
                 # Account for terminal atoms
                 # if there are no terminal_idx (ie, ring), skip
                 if cbh_level == 1 and len(terminal_idx) != 0: 
-                    terminals = self.atom_centric(0, True, terminal_idx)
+                    terminals = self.atom_centric(0, True, terminal_idx, saturate)
                     residuals = residuals + terminals
             
             cbh_pdts[cbh_level] = self.count_repeats(residuals)
@@ -161,6 +178,8 @@ class buildCBH:
         # Create reactant side of CBH Schemes
         for cbh_level in range(len(cbh_pdts.keys())):
             if cbh_level == 0:
+                # NEED TO ADJUST THIS SECTION FOR USING DIFFERENT SATURATION ATOMS
+                # NEED TO ADD STUFF SO IT ALSO CALCULATES THE NUMBER OF HF NEEDED
                 # get number of H in product
                 pdt_H = sum([cbh_pdts[0][key]*Chem.MolFromSmiles(key).GetAtomWithIdx(0).GetTotalNumHs() \
                     for key in cbh_pdts[0].keys()])
@@ -234,73 +253,42 @@ class buildCBH:
         out_dict = {key:sum(dd[key]) for key in dd.keys()}
         return out_dict
 
+    @staticmethod
+    def replace_atoms(mol, target, change, initial=False):
+        """
+        :target:    [int]
+        :change:    [int]
 
-def mol2graph(mol):
-    """Molecule to Graph
-    Converts a RDkit.Chem Mol object into an undirected igraph object.
-    Sourced directly from: https://iwatobipen.wordpress.com/2018/05/30/active-learning-rdkit-chemoinformatics-ml/
-    
-    ARGUMENTS
-    ---------
-    :mol: RDkit.Chem Mol object - represents molecule
-    
-    RETURNS
-    -------
-    :g: igraph Graph object - chemical graph of molecule
-        attributes include: atom idx, atom atomic numbers, atomic symbols, bond start/end atom idx's, bond types
-    """
-    # Gather atom/bond attributes
-    # atom attributes: atom number, atomic number, atom symbol
-    # bond attributes: atom 1 index, atom 2 index, atom bond type as number
-    atom_attributes = [(a.GetIdx(), a.GetAtomicNum(), a.GetSymbol()) for a in mol.GetAtoms()]
-    bond_attributes = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx(), b.GetBondType(), b.GetBondTypeAsDouble()) 
-                       for b in mol.GetBonds()]
-    # generate chemical graph
-    g = igraph.Graph()
-    # Create vertices for each Atom
-    for a_attr in atom_attributes:
-        g.add_vertex(a_attr[0], AtomicNum=a_attr[1], AtomicSymbol=a_attr[2])
-    # Create edges for each Bond
-    for b_attr in bond_attributes:
-        g.add_edge(b_attr[0], b_attr[1], BondType=b_attr[2], BondTypeDouble=b_attr[3])
-    return g 
+        :new_mol:   [RDkit Mol]
+        """
+        if initial:
+            terminal = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetDegree() <= 1]
 
+        new_mol = Chem.RWMol(Chem.AddHs(mol))
+        for atom in new_mol.GetAtoms():
+            if atom.GetAtomicNum() == target:
+                for nbr in atom.GetNeighbors():
+                    # if neighbor is carbon or was a terminal atom
+                    if initial:
+                        if nbr.GetAtomicNum() == 6 and nbr.GetIdx() in terminal: 
+                            atom.SetAtomicNum(change)
+                    else:
+                        if nbr.GetAtomicNum() == 6: 
+                            atom.SetAtomicNum(change)
+        Chem.SanitizeMol(new_mol)
+        return new_mol
 
-def graph2mol(graph, return_smile=False): 
-    """Graph to Molecule
-    Converts undirected igraph object to RDkit.Chem Mol object.
-    Sourced directly from: https://iwatobipen.wordpress.com/2018/05/30/active-learning-rdkit-chemoinformatics-ml/
-    
-    ARGUMENTS
-    ---------
-    :graph:         [igraph graph obj] - chemical graph of molecule
-        attributes include: atom idx, atom atomic numbers, atomic symbols, bond start/end atom idx's, bond types
-    :return_smile:  [bool] (default=False) return a SMILES string instead of a RDKit.Chem Mol object.
-    
-    RETURNS
-    -------
-    :mol:   Molecular representation as either a RDkit.Chem Mol object or SMILES string
-    """
-    mol = Chem.rdchem.RWMol()
-    # Add each vertex as an Atom
-    for v in graph.vs():
-        mol.AddAtom(Chem.Atom(v["AtomicNum"]))
-    # Add each edge as a Bond
-    for e in graph.es():
-        mol.AddBond(e.source, e.target, e['BondType'])
-    mol = mol.GetMol()
-    Chem.SanitizeMol(mol) # ensure implicit hydrogens are accounted
-    
-    # Generates SMILES str then converts back to Mol object 
-    if return_smile:
-        mol = Chem.MolToSmiles(mol)
-    return mol
-
+    def process_replace_atoms(self, mol, saturate):
+        # MUST ACCOUNT FOR 'DIST' OF THE H'S THAT ARE BEING REPLACED
+        mol = self.replace_atoms(mol, 1, saturate, True)
+        # mol = self.replace_atoms(mol, saturate, 1)
+        # mol = self.replace_atoms(mol, 35, saturate)
+        return mol
 
 def main():
-    cbh = buildCBH('CCC(F)(F)C(F)(F)C(C(O)=O)(F)(F)')
+    cbh = buildCBH('CCC(F)(F)C(F)(F)C(C(O)=O)(F)(F)', 9)
     for i in cbh.cbh_pdts:
-        print(i, cbh.cbh_pdts[i])
+        print(i, cbh.cbh_rcts[i])
     return cbh.cbh_pdts
 
 if __name__ == '__main__':

@@ -1,7 +1,4 @@
-import numpy as np
-import matplotlib.pyplot as plt
 from rdkit import Chem
-from rdkit.Chem import AllChem
 import igraph
 
 def mol2graph(mol):
@@ -43,25 +40,24 @@ def graph2mol(graph, return_smile=False):
     ---------
     :graph:         [igraph graph obj] - chemical graph of molecule
         attributes include: atom idx, atom atomic numbers, atomic symbols, bond start/end atom idx's, bond types
-    :return_smile:  [bool] (default=False) return a SMILE string instead of a RDKit.Chem Mol object.
+    :return_smile:  [bool] (default=False) return a SMILES string instead of a RDKit.Chem Mol object.
     
     RETURNS
     -------
     :mol:   Molecular representation as either a RDkit.Chem Mol object or SMILES string
     """
-    emol = Chem.rdchem.RWMol()
+    mol = Chem.rdchem.RWMol()
     # Add each vertex as an Atom
     for v in graph.vs():
-        emol.AddAtom(Chem.Atom(v["AtomicNum"]))
+        mol.AddAtom(Chem.Atom(v["AtomicNum"]))
     # Add each edge as a Bond
     for e in graph.es():
-        emol.AddBond(e.source, e.target, e['BondType'])
-    mol = emol.GetMol()
+        mol.AddBond(e.source, e.target, e['BondType'])
+    mol = mol.GetMol()
+    Chem.SanitizeMol(mol) # ensure implicit hydrogens are accounted
+    
     # Generates SMILES str then converts back to Mol object 
-    # (hack to ensure implicit hydrogens are accounted)
     if return_smile:
         mol = Chem.MolToSmiles(mol)
-    else:
-        mol = Chem.MolFromSmiles(Chem.MolToSmiles(mol))
     return mol
 
