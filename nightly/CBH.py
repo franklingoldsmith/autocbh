@@ -1,11 +1,12 @@
-import numpy as np
 from rdkit import Chem
 import igraph
+import numpy as np
 from copy import deepcopy
 from collections import defaultdict
 
+
 class buildCBH:
-    def __init__(self, smile):
+    def __init__(self, smile, saturate=1):
         """
         Build the CBH scheme for a given SMILES string of a molecule. \
             It gets the RDKit molecule object and graph representations of the SMILES.
@@ -13,6 +14,9 @@ class buildCBH:
         ARGUMENTS
         ---------
         :smile:     [str] SMILES string represnting a molecule
+        :saturate:  [int or str] (default=1 or 'H') The integer or string representation of the \
+            default molecule that will saturate the heavy atoms. \
+            Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17).
         """
         self.mol = Chem.MolFromSmiles(smile) # RDkit molecule object
         self.smile = Chem.MolToSmiles(Chem.MolFromSmiles(smile)) # rewrite SMILES str in standard forms
@@ -21,16 +25,24 @@ class buildCBH:
         self.graph_adj = np.array(self.graph.get_adjacency().data) # Graph Adjacency Matrix
         self.graph_dist = np.array(self.graph.shortest_paths()) # Matrix holding distances between vertices
 
-        self.cbh_pdts, self.cbh_rcts = self.build_scheme()
+        # Molecule attributes with explicit hydrogens
+        self.mol_h = Chem.AddHs(self.mol)
+        self.graph_h = mol2graph(self.mol_h)
+        self.graph_adj_h = np.array(self.graph_h.get_adjacency().data)
+        self.graph_dist_h = np.array(self.graph_h.shortest_paths())
+
+        self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate)
 
 
-    def build_scheme(self):
+    def build_scheme(self, saturate=1):
         """
         Build CBH scheme and store the SMILES strings in dictionaries for each CBH level.
 
         ARGUMENTS
         ---------
-        :self:
+        :saturate:  [int or str] (default=1 or 'H') The integer or string representation of the \
+            default molecule that will saturate the heavy atoms. \
+            Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17).
 
         RETURNS
         -------
@@ -41,6 +53,9 @@ class buildCBH:
         :cbh_rcts: [nested dict] The reactant side of each CBH level \
             {cbh_level: {residual SMILES : num occurences}}
         """
+
+        if type(saturate) == str:
+                saturate = Chem.AtomFromSmiles(saturate).GetAtomicNum()
 
         cbh_pdts = {} # CBH level products
         cbh_rcts = {} # CBH level reactants
@@ -57,13 +72,13 @@ class buildCBH:
             new_branches = [] # initialize branching
             # Even cbh level --> atom centric
             if cbh_level % 2 == 0: 
-                residuals = self.atom_centric(cbh_level/2, True, [])
+                residuals = self.atom_centric(cbh_level/2, True, [], saturate=saturate)
             # Odd cbh level --> bond centric
             else: 
-                residuals = self.bond_centric(np.floor(cbh_level/2), True)
+                residuals = self.bond_centric(np.floor(cbh_level/2), True, saturate)
                 # if branch_idx has values
                 if len(branch_idx) != 0: 
-                    branches = self.atom_centric(np.floor(cbh_level/2), True, branch_idx)
+                    branches = self.atom_centric(np.floor(cbh_level/2), True, branch_idx, saturate)
                     for i in range(len(branches)):
                         for j in range(branch_degrees[i]-2):
                             new_branches.append(branches[i])
@@ -71,7 +86,7 @@ class buildCBH:
                 # Account for terminal atoms
                 # if there are no terminal_idx (ie, ring), skip
                 if cbh_level == 1 and len(terminal_idx) != 0: 
-                    terminals = self.atom_centric(0, True, terminal_idx)
+                    terminals = self.atom_centric(0, True, terminal_idx, saturate)
                     residuals = residuals + terminals
             
             # End loop if the target molecules shows up on the product side
@@ -120,7 +135,7 @@ class buildCBH:
         return cbh_pdts, cbh_rcts
 
 
-    def atom_centric(self, dist, return_smile=False, atom_indices=[]) -> list:
+    def atom_centric(self, dist, return_smile=False, atom_indices=[], saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species produced by \
             atom-centric CBH steps.
@@ -147,13 +162,21 @@ class buildCBH:
             atom_inds = np.where(self.graph_dist[i] <= dist)[0]
             # create rdkit mol objects from subgraph
             residual = graph2mol(self.graph.subgraph(atom_inds))
+            if saturate != 1:
+                # This doesn't work because it still can't differentiate implicit valence/hydrogens that
+                #   are part of the molecule or were added as a saturation atom.
+                # Would still have to AddHs to target molecule at the very beginning.
+                impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in residual.GetAtoms() \
+                    if atom.GetImplicitValence() > 0}
+                
+
             if return_smile:
                 residual = Chem.MolToSmiles(residual)
             residuals.append(residual)
         return residuals
 
 
-    def bond_centric(self, dist, return_smile=False) -> list:
+    def bond_centric(self, dist, return_smile=False, saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species produced by \
             bond-centric CBH steps.
@@ -182,8 +205,10 @@ class buildCBH:
             edge_inds = list(set([x[-1] for x in gsp_s_refine] + [x[-1] for x in gsp_t_refine]))
             # create rdkit mol objects from subgraph
             residual = graph2mol(self.graph.subgraph(edge_inds))
+            if saturate != 1: 
+                residual = self.process_replace_atoms(residual, saturate)
             if return_smile:
-                residual = Chem.MolToSmiles(residual)
+                residual = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(residual)))
             # print(residual)
             residuals.append(residual)
         return residuals
@@ -287,7 +312,7 @@ def graph2mol(graph, return_smile=False):
     mol = mol.GetMol()
     Chem.SanitizeMol(mol) # ensure implicit hydrogens are accounted
     
-    # Generates SMILES str then converts back to Mol object 
+    # Generates SMILES str
     if return_smile:
         mol = Chem.MolToSmiles(mol)
     return mol
@@ -295,9 +320,8 @@ def graph2mol(graph, return_smile=False):
 
 def main():
     cbh = buildCBH('CCC(F)(F)C(F)(F)C(C(O)=O)(F)(F)')
-    for i in cbh.cbh_pdts:
-        print(i, cbh.cbh_pdts[i])
-    return cbh.cbh_pdts
+    for rung in cbh.cbh_pdts:
+        print(rung, cbh.cbh_pdts[rung])
 
 if __name__ == '__main__':
     main()
