@@ -55,10 +55,12 @@ class buildCBH:
         while True:
             # 1. CBH products
             new_branches = [] # initialize branching
-            # Even cbh level --> atom centric
+            #   a) Even cbh level --> atom centric
             if cbh_level % 2 == 0: 
                 residuals = self.atom_centric(cbh_level/2, True, [])
-            # Odd cbh level --> bond centric
+                terminals = []
+                
+            #   b) Odd cbh level --> bond centric
             else: 
                 residuals = self.bond_centric(np.floor(cbh_level/2), True)
                 # if branch_idx has values
@@ -70,15 +72,17 @@ class buildCBH:
                     
                 # Account for terminal atoms
                 # if there are no terminal_idx (ie, ring), skip
-                if cbh_level == 1 and len(terminal_idx) != 0: 
-                    terminals = self.atom_centric(0, True, terminal_idx)
-                    residuals = residuals + terminals
+                if len(terminal_idx) != 0: 
+                    terminals = self.atom_centric(np.floor(cbh_level/2), True, terminal_idx)
+                else:
+                    terminals = []
             
             # End loop if the target molecules shows up on the product side
-            if True in [Chem.MolFromSmiles(r).HasSubstructMatch(self.mol) for r in set(residuals)]:
+            if True in [Chem.MolFromSmiles(r).HasSubstructMatch(self.mol) for r in set(residuals+terminals)]:
                 break
 
-            cbh_pdts[cbh_level] = self.count_repeats(residuals)
+            cbh_rcts[cbh_level+1] = self.count_repeats(residuals)
+            cbh_pdts[cbh_level] = self.count_repeats(residuals+terminals)
 
             # 2. CBH reactants
             if cbh_level == 0:
@@ -93,7 +97,7 @@ class buildCBH:
                 cbh_rcts[cbh_level] = {'[H][H]':(pdt_H - rct_H)/2}
             else:
                 # Get the previous products + branch
-                cbh_rcts[cbh_level] = deepcopy(cbh_pdts[cbh_level-1])
+                # cbh_rcts[cbh_level] = deepcopy(cbh_pdts[cbh_level-1])
                 if len(new_branches) != 0:
                     cbh_rcts[cbh_level] = self.add_dicts(cbh_rcts[cbh_level], self.count_repeats(new_branches))
 
