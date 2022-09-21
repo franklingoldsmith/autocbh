@@ -1,7 +1,6 @@
 import numpy as np
 from rdkit import Chem
 import igraph
-from copy import deepcopy
 from collections import defaultdict
 
 class buildCBH:
@@ -86,9 +85,6 @@ class buildCBH:
 
             # 2. CBH reactants
             if cbh_level == 0:
-                # NEED TO ADJUST THIS SECTION FOR USING DIFFERENT SATURATION ATOMS
-                # NEED TO ADD STUFF SO IT ALSO CALCULATES THE NUMBER OF HF NEEDED
-
                 # Get number of H in product (bakes in stoichiometry)
                 pdt_H = sum([cbh_pdts[0][smile]*Chem.MolFromSmiles(smile).GetAtomWithIdx(0).GetTotalNumHs() \
                     for smile in cbh_pdts[0].keys()])
@@ -97,7 +93,6 @@ class buildCBH:
                 cbh_rcts[cbh_level] = {'[H][H]':(pdt_H - rct_H)/2}
             else:
                 # Get the previous products + branch
-                # cbh_rcts[cbh_level] = deepcopy(cbh_pdts[cbh_level-1])
                 if len(new_branches) != 0:
                     cbh_rcts[cbh_level] = self.add_dicts(cbh_rcts[cbh_level], self.count_repeats(new_branches))
 
