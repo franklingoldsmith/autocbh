@@ -15,7 +15,7 @@ class buildCBH:
         :smile:     [str] SMILES string represnting a molecule
         :saturate:  [int or str] (default=1 or 'H') The integer or string representation of the \
             default molecule that will saturate the heavy atoms. \
-            Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17).
+            Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17). Currently, it only supports halogens.
         """
         self.mol = Chem.MolFromSmiles(smile) # RDkit molecule object
         self.smile = Chem.MolToSmiles(Chem.MolFromSmiles(smile)) # rewrite SMILES str in standard forms
@@ -31,6 +31,8 @@ class buildCBH:
         self.graph_dist_h = np.array(self.graph_h.shortest_paths())
 
         self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate)
+
+        self.highest_cbh = max(self.cbh_pdts.keys())
 
 
     def build_scheme(self, saturate=1):
@@ -114,8 +116,12 @@ class buildCBH:
                     terminals = []
             
             # End loop if the target molecules shows up on the product side
+            # The substructure search removes the possibilty of "overshooting" or "circularity" 
+            # (i.e., C2F6 in product side for CH3CF3)
             if True in [Chem.MolFromSmiles(r).HasSubstructMatch(self.mol) for r in set(residuals+terminals)]:
                 del cbh_rcts[cbh_level]
+                if cbh_rcts[0]['[H][H]'] == 0:
+                    del cbh_rcts[0]['[H][H]']
                 break
             
             # Count num of each residual and return as dictionary
@@ -335,7 +341,7 @@ class buildCBH:
 
         ARGUMENTS
         ---------
-        :cbh_rung:  [int] CBH rung to display (default = [] --> all rungs) 
+        :cbh_rung:  [int] CBH rung to display (default = [] --> all rungs) \
                         A value of '-1' can be used to get the highest rung.
 
         RETURNS
@@ -367,7 +373,7 @@ class buildCBH:
 
     def __visualize(self, cbh_level):
         """
-        Helper function that actually creates the images to visualize.
+        Helper function that actually creates the images to visualize. Designed for Jupyter Notebook.
 
         ARGUMENTS
         ---------
@@ -462,9 +468,9 @@ def graph2mol(graph, return_smile=False):
 
 
 def main():
-    cbh = buildCBH('CCC(F)(F)C(F)(F)C(C(O)=O)(F)(F)', 9)
+    cbh = buildCBH('C(F)(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)(F)', 9)
     for rung in cbh.cbh_pdts:
-        print(rung, cbh.cbh_pdts[rung])
+        print(rung, cbh.cbh_rcts[rung])
 
 if __name__ == '__main__':
     main()
