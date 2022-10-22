@@ -422,14 +422,14 @@ def mol2graph(mol):
     # Gather atom/bond attributes
     # atom attributes: atom number, atomic number, atom symbol
     # bond attributes: atom 1 index, atom 2 index, atom bond type as number
-    atom_attributes = [(a.GetIdx(), a.GetAtomicNum(), a.GetSymbol()) for a in mol.GetAtoms()]
+    atom_attributes = [(a.GetIdx(), a.GetAtomicNum(), a.GetSymbol(), a.GetNumRadicalElectrons()) for a in mol.GetAtoms()]
     bond_attributes = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx(), b.GetBondType(), b.GetBondTypeAsDouble()) 
                        for b in mol.GetBonds()]
     # generate chemical graph
     g = igraph.Graph()
     # Create vertices for each Atom
     for a_attr in atom_attributes:
-        g.add_vertex(a_attr[0], AtomicNum=a_attr[1], AtomicSymbol=a_attr[2])
+        g.add_vertex(a_attr[0], AtomicNum=a_attr[1], AtomicSymbol=a_attr[2], NumRad=a_attr[3])
     # Create edges for each Bond
     for b_attr in bond_attributes:
         g.add_edge(b_attr[0], b_attr[1], BondType=b_attr[2], BondTypeDouble=b_attr[3])
@@ -453,8 +453,15 @@ def graph2mol(graph, return_smile=False):
     """
     mol = Chem.rdchem.RWMol()
     # Add each vertex as an Atom
+    atom_num = 0 # counter
     for v in graph.vs():
         mol.AddAtom(Chem.Atom(v["AtomicNum"]))
+
+        if v['NumRad'] != 0:
+            # Set the num of radical electrons
+            mol.GetAtomWithIdx(atom_num).SetNumRadicalElectrons(v['NumRad'])
+            
+        atom_num += 1
     # Add each edge as a Bond
     for e in graph.es():
         mol.AddBond(e.source, e.target, e['BondType'])
@@ -468,7 +475,7 @@ def graph2mol(graph, return_smile=False):
 
 
 def main():
-    cbh = buildCBH('C(F)(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)(F)', 9)
+    cbh = buildCBH('CC(F)(F)OC(F)[CH2]', 1)
     for rung in cbh.cbh_pdts:
         print(rung, cbh.cbh_rcts[rung])
 
