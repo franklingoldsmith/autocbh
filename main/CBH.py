@@ -65,7 +65,7 @@ class buildCBH:
         :ignore_F2:     [bool] (default=True) Avoid using F2 when saturate='F'
         """
         self.mol = Chem.MolFromSmiles(smile) # RDkit molecule object
-        self.smile = Chem.MolToSmiles(Chem.MolFromSmiles(smile)) # rewrite SMILES str in standard forms
+        self.smile = Chem.CanonSmiles(smile) # rewrite SMILES str in standard forms
 
         self.graph = mol2graph(self.mol) # Graph representation of molecule
         self.graph_adj = np.array(self.graph.get_adjacency().data) # Graph Adjacency Matrix
@@ -79,11 +79,10 @@ class buildCBH:
         self.graph_dist_h = np.array(self.graph_h.shortest_paths())
 
         # Build CBH Scheme
+        self.ignore_F2 = ignore_F2
         self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate)
         # Highest CBH rung
         self.highest_cbh = max(self.cbh_pdts.keys())
-
-        self.ignore_F2 = ignore_F2
 
 
     def build_scheme(self, saturate=1):
@@ -337,7 +336,7 @@ class buildCBH:
         return residuals
 
 
-    def CBH_0_F(self):
+    def CBH_0_F(self) -> tuple:
         """
         Calculates an alternative isogyric fluorinated CBH-0 scheme that 
         avoids the use of F2.
@@ -389,7 +388,7 @@ class buildCBH:
 
 
     @staticmethod
-    def add_dicts(dict1, dict2):
+    def add_dicts(dict1, dict2) -> dict:
         """
         Add the values within a dictionary together for matching keys.
         All dictionaries have the form: {residual SMILES : num occurences}}
@@ -585,7 +584,7 @@ def graph2mol(graph, return_smile=False):
     
     # Generates SMILES str
     if return_smile:
-        mol = Chem.MolToSmiles(mol)
+        mol = Chem.CanonSmiles(Chem.MolToSmiles(mol))
     return mol
 
 

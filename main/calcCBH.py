@@ -1,50 +1,65 @@
 import CBH
 import pandas as pd
 from numpy import matmul, nan, isnan
-from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs
+from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs, CanonSmiles
 
-# This file will generate a table of coefficients corresonding to the CBH rungs
-#  for multiple species at once.
 
 class calcCBH:
+    """
+    This class handles the hierarchical calculation of heats of formation
+    using CBH schemes.
+
+    ATTRIBUTES
+    ----------
+    :species_list:   [list] The list of inputted species_list 
+                        (SMILES strings)
+    :coefficient_df: [list] List of Pandas DataFrame objects. The index 
+                        of the list corresponds to the CBH rung. 
+
+    METHODS
+    -------
+    generate_CBHs   :   Generate a list of DataFrames of coefficients for 
+                            CBH schemes
+    calc_Hf         :   Stores the best heats of formation in a given database
+                            in a hiearchical manner using CBH rungs
+    Hf              :   Workhorse calculates the heats of formation and
+                            reaction of a given species
+    calc_Hf_allrungs:   Calculate the heats of formation and reaction 
+                            at each rung for a given species
+    """
+
     def __init__(self, species_list, saturate=1):
         """
-        This class stores the coefficients for every precursor created for CBH schemes of
-        each target species in "species_list"
-
         ARGUMENTS
         ---------
         :species_list:  [list] List of SMILES strings with target molecules
-        :saturate:      [int or str] Integer representing the atomic number of the element to saturate
-                            residual species with. String representation of the element also works.
-
-        ATTRIBUTES
-        ----------
-        :species_list:   [list] The list of inputted species_list (SMILES strings)
-        :coefficient_df: [list] List of Pandas DataFrame objects. The index of the list corresponds 
-                            to the CBH rung. 
+        :saturate:      [int or str] Integer representing the atomic number 
+                            of the element to saturate residual species with. 
+                            String representation of the element also works.
         """
 
-        self.species_list = [MolToSmiles(MolFromSmiles(species)) for species in species_list] # list of SMILES strings
+        self.species_list = [CanonSmiles(species) for species in species_list] # list of SMILES strings
         self.saturate = saturate # saturation species
         
-        self.coefficient_df, highest_rung_per_molec = self.generate_CBHs()
+        self.coefficient_df = self.generate_CBHs(self.species_list, saturate)
         self.precursors = list(set(pd.concat(self.coefficient_df,axis=1).columns.values))
-        self.highest_rung_per_molec = dict(zip(self.species_list, highest_rung_per_molec))
 
         constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
-        # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1)
+        # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
         self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
+        self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
         # sort by num C then by SMILES length
         self.energies.sort_index(key=lambda x: x.str.count('C')*max(x.str.count('C'))+x.str.len(),inplace=True)
-        # self.energies.drop('CC(F)(F)C(F)(F)F',axis=0, inplace=True)
+        # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
         
+        self.error_messages = {}
+
         # self.Hrxn = self.calc_Hrxn()
         
-    def generate_CBHs(self) -> list:
+    def generate_CBHs(self, species_list, saturate=1) -> list:
         """
-        Generate a list of Pandas DataFrame objects that hold the coefficients for every precursor 
-        created for CBH schemes of each target species.
+        Generate a list of Pandas DataFrame objects that hold the coefficients 
+        for every precursor created for CBH schemes of each target species.
 
         ARGUMENTS
         ---------
@@ -52,25 +67,26 @@ class calcCBH:
 
         RETURNS
         -------
-        :dfs:   [list] List of DataFrames for each rung. Each DataFrame holds the coefficients
-                    of precursors for each target species.
+        :dfs:   [list] List of DataFrames for each rung. Each DataFrame holds 
+                    the coefficients of precursors for each target species.
 
         Example
         -------
         dfs = [df0, df1, df2, ..., dfn] Where n = the highest CBH rung
         
-        dfn = DataFrame with index = target species and columns = precursor species]
+        dfn = DataFrame where the index is the target species, and columns are 
+                precursor species
 
-        Data within DataFrame are coefficients for precursor species that are used for the CBH rung of the
-        given target species.
+        Data within DataFrame are coefficients for precursor species that are 
+        used for the CBH rung of the given target species.
         """
         
         # initialize dictionaries to hold each species' CBH scheme
         all_rcts = {} # {species: {CBH scheme reactants}}
         all_pdts = {} # {species: {CBH scheme products}}
         all_targets = [] # list of SMILES strings representing the target molecules
-        for species in self.species_list:
-            cbh = CBH.buildCBH(species, self.saturate) # generate CBH scheme
+        for species in species_list:
+            cbh = CBH.buildCBH(species, saturate) # generate CBH scheme
             # add to dictionary / lists
             all_rcts[cbh.smile] = cbh.cbh_rcts
             all_pdts[cbh.smile] = cbh.cbh_pdts
@@ -86,19 +102,19 @@ class calcCBH:
             df = {}
             # Cycle through each species in species_list
             for species in all_targets:
-                try: # avoid cases where rung > the # of CBH rungs for that species
+                if rung <= max(all_pdts[species].keys()):
                     df[species] = all_pdts[species][rung]
-                    df[species].update((precursor, coeff* -1) for precursor,coeff in all_rcts[species][rung].items())
-                except:
-                    continue
+                    df[species].update((precursor, coeff * -1) for precursor,coeff in all_rcts[species][rung].items())
+                    df[species].update({species:-1})
             dfs.append(pd.DataFrame(df).fillna(0).T)
-        return dfs, highest_rung_per_molec
+        return dfs
 
 
     def calc_Hf(self):
         """
-        Calculate the heats of formation of species that do not have reference values using the highest possible CBH scheme
-        with the best possible level of theory.
+        Calculate the heats of formation of species that do not have reference 
+        values using the highest possible CBH scheme with the best possible level 
+        of theory.
         
         ARGUMENTS
         ---------
@@ -124,32 +140,56 @@ class calcCBH:
         simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
         # sorted list of molecules that don't have any reference values
         sorted_species = sorted(self.energies[self.energies['source'].isna()].index.values, key=simple_sort)
+
         # cycle through those molecules
         for s in sorted_species:
-            print(s)
             h_cbh = CBH.buildCBH(s, 1) # hydrogenated
             f_cbh = CBH.buildCBH(s, 9) # fluorinated
+            
+            self.error_messages[s] = []
 
             h_rung = h_cbh.highest_cbh
-            # try:
-            #     if True in self.energies.loc[h_cbh.cbh_pdts[h_rung].keys(),'source'].isna().values \
-            #             or True in self.energies.loc[h_cbh.cbh_rcts[h_rung].keys(),'source'].isna().values:
-            #         for h_rung in reversed(range(h_cbh.highest_cbh-1)): # count down (backwards)
-            #             if True not in self.energies.loc[h_cbh.cbh_pdts[h_rung].keys(),'source'].isna().values \
-            #                 or True not in self.energies.loc[h_cbh.cbh_rcts[h_rung].keys(),'source'].isna().values:
-            #                 break
-            # except KeyError:
-            #     break  # bad
-            f_rung=f_cbh.highest_cbh
-            # try:
-            #     if True in self.energies.loc[f_cbh.cbh_pdts[f_rung].keys(),'source'].isna().values \
-            #             or True in self.energies.loc[f_cbh.cbh_rcts[f_rung].keys(),'source'].isna().values:
-            #         for f_rung in reversed(range(f_cbh.highest_cbh-1)): # count down (backwards)
-            #             if True not in self.energies.loc[f_cbh.cbh_pdts[f_rung].keys(),'source'].isna().values \
-            #                 or True not in self.energies.loc[f_cbh.cbh_rcts[f_rung].keys(),'source'].isna().values:
-            #                 break
-            # except KeyError:
-            #     break
+            for rung in reversed(range(h_rung+1)):
+                try:
+                    sources = self.energies.loc[list(h_cbh.cbh_rcts[rung].keys()) + list(h_cbh.cbh_pdts[rung].keys()), 'source'].values.tolist()
+                except KeyError as e:
+                    h_rung -= 1
+                    self.error_messages[s].append(f"Missing reactant(s): \n\t   {str(e)}\nCBH-H rung will move down to {h_rung}.")
+                    continue
+                sources = [s.split('_')[0] for s in sources]
+                set_source = list(set(sources))
+                if len(set_source) == 1: # homogenous sources
+                    if set_source[0] != 'ATcT': 
+                        self.error_messages[s].append(f'All precursor species for CBH-{h_rung}-H had the same reference level of theory. \n\tThis implies that this rung is equivalent to CBH-{h_rung}-H. \n\tUsing CBH-{h_rung-1}-H instead.')
+                        h_rung -= 1
+                        continue
+                    else: # okay to use this rung if they are experimental values
+                        break
+                else: # heterogenous sources are good
+                    break
+            
+            f_rung = f_cbh.highest_cbh
+            for rung in reversed(range(f_rung+1)):
+                try:
+                    sources = self.energies.loc[list(f_cbh.cbh_rcts[rung].keys()) + list(f_cbh.cbh_pdts[rung].keys()), 'source'].values.tolist()
+                except KeyError as e:
+                    f_rung -= 1
+                    self.error_messages[s].append(f"Missing reactant(s): \n\t   {str(e)}\nCBH-F rung will move down to {f_rung}.")
+                    continue
+                sources = [s.split('_')[0] for s in sources]
+                set_source = list(set(sources))
+                if len(set_source) == 1: # homogenous sources
+                    if set_source[0] != 'ATcT': 
+                        self.error_messages[s].append(f'All precursor species for CBH-{f_rung}-F had the same reference level of theory. \n\tThis implies that this rung is equivalent to CBH-{f_rung}-F. \n\tUsing CBH-{f_rung-1}-F instead.')
+                        f_rung -= 1
+                        continue
+                    else: # okay to use this rung if they are experimental values
+                        break
+                else: # heterogenous sources are good
+                    break
+
+            if len(self.error_messages[s]) == 0:
+                del self.error_messages[s]
 
             cbh_ls = []
             if h_rung > f_rung:
@@ -165,36 +205,51 @@ class calcCBH:
             for cbh in cbh_ls:
                 if len(cbh_ls) > 1: # if saturation of H and F yield the same highest rung
                     # average the heats of formation and reactions b/w the two saturation strategies
-                    Hrxn_H, Hf_H = self._Hf(s, cbh_ls[0], h_rung)
-                    Hrxn_F, Hf_F = self._Hf(s, cbh_ls[1], f_rung)
-                    Hrxn[s] = {k:(v + Hrxn_F[k])/2 for k,v in Hrxn_H.items()}
-                    Hf[s] = {k:(v + Hf_F[k])/2 for k,v in Hf_H.items()}
+                    Hrxn_H, Hf_H = self.Hf(s, cbh_ls[0], h_rung)
+                    Hrxn_F, Hf_F = self.Hf(s, cbh_ls[1], f_rung)
+                    # weights (HrxnH, HrxnF) --> only apply to Hf for now
+                    weights = {k: self._weight(v, Hrxn_F[k]) for k,v in Hrxn_H.items()} 
+                    # used to be {k: (v + H_F[k])/2 for k,v in H_H.items()}
+                    Hrxn[s] = {k: weights[k][0]*v + weights[k][1]*Hrxn_F[k] for k,v in Hrxn_H.items()}
+                    Hf[s] = {k: weights[k][0]*v + weights[k][1]*Hf_F[k] for k,v in Hf_H.items()}
                     break
                 else:
-                    Hrxn[s], Hf[s] = self._Hf(s, cbh, max(h_rung, f_rung))
+                    Hrxn[s], Hf[s] = self.Hf(s, cbh, max(h_rung, f_rung))
 
             # Choose the best possible method to assign to the energies dataframe
             if not isnan(Hrxn[s]['anl0']):
                 self.energies.loc[s,'DfH'] = Hf[s]['anl0']
+                self.energies.loc[s,'DrxnH'] = Hrxn[s]['anl0']
                 self.energies.loc[s,'source'] = label+'_anl0'
             elif not isnan(Hrxn[s]['f12b']):
                 self.energies.loc[s,'DfH'] = Hf[s]['f12b']
+                self.energies.loc[s,'DrxnH'] = Hrxn[s]['f12b']
                 self.energies.loc[s,'source'] = label+'_f12b'
             elif not isnan(Hrxn[s]['m062x_dnlpo']) and not isnan(Hrxn[s]['wb97xd_dnlpo']):
                 self.energies.loc[s,'DfH'] = (Hf[s]['m062x_dnlpo'] + Hf[s]['wb97xd_dnlpo'])/2
-                self.energies.loc[s,'source'] = label+'_dnlpo_avg'
+                self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x_dnlpo'] + Hrxn[s]['wb97xd_dnlpo'])/2
+                self.energies.loc[s,'source'] = label+'_dnlpo'
             elif not isnan(Hrxn[s]['b2plypd3']):
                 self.energies.loc[s,'DfH'] = Hf[s]['b2plypd3']
+                self.energies.loc[s,'DrxnH'] = Hrxn[s]['b2plypd3']
                 self.energies.loc[s,'source'] = label+'_b2plypd3'
             else:
                 self.energies.loc[s,'DfH'] = (Hf[s]['m062x'] + Hf[s]['wb97xd'])/2
-                self.energies.loc[s,'source'] = label+'_dft_avg'
+                self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x'] + Hrxn[s]['wb97xd'])/2
+                self.energies.loc[s,'source'] = label+'_dft'
 
-        return self.energies[['DfH', 'uncertainty', 'source']]
+        if len(self.error_messages.keys()) != 0:
+            print(f'Process completed with errors in {len(self.error_messages.keys())} species')
+            print(f'These errors are likely to have propagated for the calculation of heats of formation of larger species.')
+            print(f'Updating the reference values of species in the database will improve accuracy of heats of formation.')
+            print(f'To inspect the errors, run the calcCBH.print_errors() method.')
 
-    def _Hf(self, s, cbh, cbh_rung):
+        return self.energies[['DfH', 'DrxnH', 'uncertainty', 'source']]
+
+    def Hf(self, s, cbh, cbh_rung):
         """
-        Helper method to calculate the heat of formation (and reaction) given a species and it's cbh scheme (CBH.buildCBH object).
+        Helper method to calculate the heat of formation (and reaction) given 
+        a species and it's cbh scheme (CBH.buildCBH object).
 
         ARGUMENTS
         ---------
@@ -205,8 +260,11 @@ class calcCBH:
         RETURNS
         -------
         (Hrxn, Hf)  [tuple]
-            :Hrxn:  [dict] Heat of reaction calculated for ref, anl0, f12b, m062x_dnlpo, wb97xd_dnlpo, b2plypd3, m062x, and wb97xd methods using CBH.
-            :Hf:    [dict] Heat of formation calculated for each of the same methods in Hrxn. 
+            :Hrxn:  [dict] Heat of reaction calculated for ref, anl0, f12b, 
+                        m062x_dnlpo, wb97xd_dnlpo, b2plypd3, m062x, and wb97xd 
+                        levels of theory using CBH.
+            :Hf:    [dict] Heat of formation calculated for each of the same 
+                        levels of theory in Hrxn. 
         """
 
         hartree_to_kJpermole = 2625.499748 # (kJ/mol) / Hartree
@@ -246,13 +304,12 @@ class calcCBH:
         coeff_arr = pd.DataFrame(rxn).T.sort_index(axis=1).values * -1 # products are negative, and reactants are positive
         nrg_arr = self.energies.loc[list(rxn[s].keys()), nrg_cols].sort_index().values
         matrix_mult = matmul(coeff_arr, nrg_arr)
-        # print(self.energies.loc[list(rxn[s].keys()), nrg_cols].sort_index())
-        # print(pd.DataFrame(matrix_mult, columns=nrg_cols, index=[s]))
         delE = {nrg_cols[i]:matrix_mult[0][i] for i in range(len(nrg_cols))}
+        # Subtract off DfH from the energies column in case it is not 0
+        # we must assert that the DfH is not computed for the target species
+        delE['DfH'] = delE['DfH'] - self.energies.loc[s, 'DfH']
         
         Hrxn = {'ref':nan, 'anl0':nan, 'f12b':nan, 'm062x_dnlpo':nan, 'wb97xd_dnlpo':nan, 'b2plypd3':nan, 'm062x':nan, 'wb97xd':nan}
-        
-        # if 0 not in self.energies.loc[rxn[s].keys(), 'DfH'].values: # includes target that doesn't have DfH obv
         Hrxn['ref'] = delE['DfH']
 
         # Hrxn anl0
@@ -294,6 +351,69 @@ class calcCBH:
         # print(s, Hf)
 
         return Hrxn, Hf
+
+
+    def calc_Hf_allrungs(self, s, saturate=1):
+        """
+        Calculates the Hf of a given species at each CBH rung.
+        Assumes that calc_Hf has already been run or the database
+        has all of the necessary energies of molecules.
+
+        ARGUMENTS
+        ---------
+        :s:         [str] SMILES string of the target species.
+        :saturate:  [int] Atomic number of saturation element.
+
+        RETURN
+        ------
+        (Hrxn, Hf): [tuple]
+            Hrxn    [dict] {rung : heat of reaction}
+            Hf      [dict] {rung : heat of formation}
+        """
+
+        s = CanonSmiles(s) # standardize SMILES
+        s_cbh = CBH.buildCBH(s, saturate)
+
+        Hf = {}
+        Hrxn = {}
+        for rung in range(s_cbh.highest_cbh):
+            Hrxn[rung], Hf[rung] = self.Hf(s, s_cbh, rung)
+
+        return Hrxn, Hf
+
+
+    def choose_best_method(self):
+        return
+
+    
+    def _weight(self, Hrxn1, Hrxn2):
+        """
+        Weighting for combining different CBH schemes at the same level.
+        w_j = |∆Hrxn,j|^-1 / sum_k(|∆Hrxn,k|^-1)
+        """
+        w1 = 1/abs(Hrxn1) / (1/abs(Hrxn1) + 1/abs(Hrxn2))
+        w2 = 1/abs(Hrxn2) / (1/abs(Hrxn1) + 1/abs(Hrxn2))
+
+        return w1, w2
+
+    
+    def print_errors(self):
+        """
+        Print error messages after calcCBH.calcHf() method completed.
+
+        ARGUMENTS
+        ---------
+        None
+
+        RETURNS
+        -------
+        None
+        """
+        for s in self.error_messages.keys():
+            print(f'{s}:')
+            for m in self.error_messages[s]:
+                print('\n\t'+m)
+            print('\n')
 
 
 if __name__ == '__main__':
