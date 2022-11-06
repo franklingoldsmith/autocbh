@@ -124,15 +124,6 @@ class calcCBH:
         ------
         :self.energies:  [pd.DataFrame] 
         """
-
-        # trigger = 0
-        # for precursor in self.precursors:
-        #     if precursor not in self.energies.index.values:
-        #         print(f'Missing Compound: {precursor}') 
-        #         trigger += 1
-        # if trigger > 0:
-        #     print('Cannot proceed without single point energies of these molecules.')
-        #     return
         
         Hf = {}
         Hrxn = {}
@@ -148,45 +139,8 @@ class calcCBH:
             
             self.error_messages[s] = []
 
-            h_rung = h_cbh.highest_cbh
-            for rung in reversed(range(h_rung+1)):
-                try:
-                    sources = self.energies.loc[list(h_cbh.cbh_rcts[rung].keys()) + list(h_cbh.cbh_pdts[rung].keys()), 'source'].values.tolist()
-                except KeyError as e:
-                    h_rung -= 1
-                    self.error_messages[s].append(f"Missing reactant(s): \n\t   {str(e)}\nCBH-H rung will move down to {h_rung}.")
-                    continue
-                sources = [s.split('_')[0] for s in sources]
-                set_source = list(set(sources))
-                if len(set_source) == 1: # homogenous sources
-                    if set_source[0] != 'ATcT': 
-                        self.error_messages[s].append(f'All precursor species for CBH-{h_rung}-H had the same reference level of theory. \n\tThis implies that this rung is equivalent to CBH-{h_rung}-H. \n\tUsing CBH-{h_rung-1}-H instead.')
-                        h_rung -= 1
-                        continue
-                    else: # okay to use this rung if they are experimental values
-                        break
-                else: # heterogenous sources are good
-                    break
-            
-            f_rung = f_cbh.highest_cbh
-            for rung in reversed(range(f_rung+1)):
-                try:
-                    sources = self.energies.loc[list(f_cbh.cbh_rcts[rung].keys()) + list(f_cbh.cbh_pdts[rung].keys()), 'source'].values.tolist()
-                except KeyError as e:
-                    f_rung -= 1
-                    self.error_messages[s].append(f"Missing reactant(s): \n\t   {str(e)}\nCBH-F rung will move down to {f_rung}.")
-                    continue
-                sources = [s.split('_')[0] for s in sources]
-                set_source = list(set(sources))
-                if len(set_source) == 1: # homogenous sources
-                    if set_source[0] != 'ATcT': 
-                        self.error_messages[s].append(f'All precursor species for CBH-{f_rung}-F had the same reference level of theory. \n\tThis implies that this rung is equivalent to CBH-{f_rung}-F. \n\tUsing CBH-{f_rung-1}-F instead.')
-                        f_rung -= 1
-                        continue
-                    else: # okay to use this rung if they are experimental values
-                        break
-                else: # heterogenous sources are good
-                    break
+            h_rung = self.check_rung_usability(s, h_cbh.highest_cbh, h_cbh.cbh_rcts, h_cbh.cbh_pdts, 'H')
+            f_rung = self.check_rung_usability(s, f_cbh.highest_cbh, f_cbh.cbh_rcts, f_cbh.cbh_pdts, 'F')
 
             if len(self.error_messages[s]) == 0:
                 del self.error_messages[s]
@@ -397,6 +351,68 @@ class calcCBH:
         return w1, w2
 
     
+    def check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str): 
+        """
+        Method that checks a given CBH rung's usability by looking for missing 
+        reactants or whether all precursors were derived using CBH schemes of 
+        the same level of theory. Errors will cause the method to move down to
+        the next rung and repeat the process. It stores any errors to the 
+        calcCBH.error_messages attribute which can be displayed with the 
+        calcCBH.print_errors() method. 
+
+        ??? Still need to check if there are homogeneous level of theory 
+        values in database for the calculation ???
+
+        ARGUMENTS
+        ---------
+        :s:         [str] SMILES string of the target species
+        :test_rung: [int] Rung number to start with. (usually the highest 
+                        possible rung)
+        :cbh_rcts:  [dict] The target species' CBH.cbh_rcts attribute
+                        {rung # : [reactant SMILES]}
+        :cbh_pdts:  [dict] The target species' CBH.cbh_pdts attribute
+                        {rung # : [product SMILES]}
+        :label:     [str] The label used for the type of CBH
+                        ex. 'H' for hydrogenated, 'F' for fluorinated
+
+        RETURNS
+        -------
+        test_rung   [int] The highest rung that does not fail
+        """
+        
+        for rung in reversed(range(test_rung+1)):
+            # check existance of all reactants in database
+            try:
+                sources = self.energies.loc[list(cbh_rcts[rung].keys()) + list(cbh_pdts[rung].keys()), 'source'].values.tolist()
+            except KeyError as e:
+                test_rung -= 1
+                total_list = list(cbh_rcts[rung].keys()) + list(cbh_pdts[rung].keys())
+                
+                # find all precursors that aren't present in the database
+                missing_precursors = ''
+                for precursors in total_list:
+                    if precursors not in self.energies.index:
+                        missing_precursors += '\n\t   '+precursors
+
+                self.error_messages[s].append(f"Missing reactant(s): {missing_precursors}\nCBH-{label} rung will move down to {test_rung}.")
+                continue
+            sources = [s.split('_')[0] for s in sources]
+            set_source = list(set(sources))
+
+            # check sources of all reactants
+            if len(set_source) == 1: # homogenous sources
+                if set_source[0] != 'ATcT': 
+                    self.error_messages[s].append(f'All precursor species for CBH-{test_rung}-{label} had the same reference level of theory. \n\tThis implies that this rung is equivalent to CBH-{test_rung-1}-{label}. \n\tUsing CBH-{test_rung-1}-{label} instead.')
+                    test_rung -= 1
+                    continue
+                else: # okay to use this rung if they are experimental values
+                    return test_rung
+            else: # heterogenous sources are good
+                return test_rung
+        
+        return test_rung
+
+    
     def print_errors(self):
         """
         Print error messages after calcCBH.calcHf() method completed.
@@ -409,11 +425,14 @@ class calcCBH:
         -------
         None
         """
-        for s in self.error_messages.keys():
-            print(f'{s}:')
-            for m in self.error_messages[s]:
-                print('\n\t'+m)
-            print('\n')
+        if len(list(self.error_messages.keys())) != 0:
+            for s in self.error_messages.keys():
+                print(f'{s}:')
+                for m in self.error_messages[s]:
+                    print('\n\t'+m)
+                print('\n')
+        else:
+            print('No errors found.')
 
 
 if __name__ == '__main__':
