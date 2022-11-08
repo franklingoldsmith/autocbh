@@ -51,6 +51,9 @@ class calcCBH:
         # sort by num C then by SMILES length
         self.energies.sort_index(key=lambda x: x.str.count('C')*max(x.str.count('C'))+x.str.len(),inplace=True)
         # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
+        # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
+        # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
+        # 'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo']] = nan
         
         self.error_messages = {}
 
@@ -187,10 +190,14 @@ class calcCBH:
                 self.energies.loc[s,'DfH'] = Hf[s]['b2plypd3']
                 self.energies.loc[s,'DrxnH'] = Hrxn[s]['b2plypd3']
                 self.energies.loc[s,'source'] = label+'_b2plypd3'
-            else:
+            elif not isnan(Hrxn[s]['m062x']) and not isnan(Hrxn[s]['wb97xd']):
                 self.energies.loc[s,'DfH'] = (Hf[s]['m062x'] + Hf[s]['wb97xd'])/2
                 self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x'] + Hrxn[s]['wb97xd'])/2
                 self.energies.loc[s,'source'] = label+'_dft'
+            else:
+                self.energies.loc[s,'DfH'] = nan
+                self.energies.loc[s,'DrxnH'] = nan
+                self.energies.loc[s,'source'] = 'NaN'
 
         if len(self.error_messages.keys()) != 0:
             print(f'Process completed with errors in {len(self.error_messages.keys())} species')
@@ -331,7 +338,11 @@ class calcCBH:
         Hf = {}
         Hrxn = {}
         for rung in range(s_cbh.highest_cbh):
-            Hrxn[rung], Hf[rung] = self.Hf(s, s_cbh, rung)
+            try:
+                Hrxn[rung], Hf[rung] = self.Hf(s, s_cbh, rung)
+            except TypeError:
+                print(f'Cannot compute CBH-{rung}')
+                pass
 
         return Hrxn, Hf
 
@@ -380,22 +391,42 @@ class calcCBH:
         test_rung   [int] The highest rung that does not fail
         """
         
+        nrg_cols = ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
+        'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
+        'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo']
+
         for rung in reversed(range(test_rung+1)):
             # check existance of all reactants in database
+            all_precursors = list(cbh_rcts[rung].keys()) + list(cbh_pdts[rung].keys())
+
             try:
-                sources = self.energies.loc[list(cbh_rcts[rung].keys()) + list(cbh_pdts[rung].keys()), 'source'].values.tolist()
+                sources = self.energies.loc[all_precursors, 'source'].values.tolist()
+                # if all values contributing to the energy of a precursor are NaN move down a rung
+                species_null = self.energies.loc[all_precursors, nrg_cols].isnull().all(axis=1)
+                if True in species_null.values:
+                    test_rung -= 1
+                    # error message
+                    missing_precursors = ''
+                    for precursors in species_null.index[species_null.values]:
+                        missing_precursors += '\n\t   '+precursors
+                    self.error_messages[s].append(f"Precursor(s) do not have any calculations in database: {missing_precursors}\nCBH-{label} rung will move down to {test_rung}.")
+                    continue
+                else:
+                    pass
+            
+            # triggers when a precursor in the CBH scheme does not appear in the database
             except KeyError as e:
                 test_rung -= 1
-                total_list = list(cbh_rcts[rung].keys()) + list(cbh_pdts[rung].keys())
                 
                 # find all precursors that aren't present in the database
                 missing_precursors = ''
-                for precursors in total_list:
+                for precursors in all_precursors:
                     if precursors not in self.energies.index:
                         missing_precursors += '\n\t   '+precursors
 
                 self.error_messages[s].append(f"Missing reactant(s): {missing_precursors}\nCBH-{label} rung will move down to {test_rung}.")
                 continue
+
             sources = [s.split('_')[0] for s in sources]
             set_source = list(set(sources))
 
@@ -409,7 +440,6 @@ class calcCBH:
                     return test_rung
             else: # heterogenous sources are good
                 return test_rung
-        
         return test_rung
 
     
