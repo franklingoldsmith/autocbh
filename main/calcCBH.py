@@ -1,7 +1,10 @@
 import CBH
+from CBH import add_dicts
 import pandas as pd
 from numpy import matmul, nan, isnan
 from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs, CanonSmiles
+from data.MolData import load_rankings
+import numpy as np
 
 
 class calcCBH:
@@ -15,6 +18,8 @@ class calcCBH:
                         (SMILES strings)
     :coefficient_df: [list] List of Pandas DataFrame objects. The index 
                         of the list corresponds to the CBH rung. 
+    :rankings:       [dict] Dictionary of the rankings for different 
+                        levels of theory.
 
     METHODS
     -------
@@ -28,18 +33,24 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, species_list, saturate=1):
+    def __init__(self, species_list, saturate=1, rankings=''):
         """
         ARGUMENTS
         ---------
-        :species_list:  [list] List of SMILES strings with target molecules
+        :species_list:  [list] List of SMILES strings with target molecules.
         :saturate:      [int or str] Integer representing the atomic number 
                             of the element to saturate residual species with. 
                             String representation of the element also works.
+        :rankings:      [str] Filepath to rankings yaml file for levels of 
+                            theory.
         """
 
         self.species_list = [CanonSmiles(species) for species in species_list] # list of SMILES strings
         self.saturate = saturate # saturation species
+
+        if rankings == '':
+            rankings = 'data/rankings.yaml'
+        self.rankings = load_rankings(rankings)
         
         self.coefficient_df = self.generate_CBHs(self.species_list, saturate)
         self.precursors = list(set(pd.concat(self.coefficient_df,axis=1).columns.values))
@@ -59,7 +70,7 @@ class calcCBH:
 
         # self.Hrxn = self.calc_Hrxn()
         
-    def generate_CBHs(self, species_list, saturate=1) -> list:
+    def generate_CBHs(self, species_list: list, saturate: int=1) -> list:
         """
         Generate a list of Pandas DataFrame objects that hold the coefficients 
         for every precursor created for CBH schemes of each target species.
@@ -142,8 +153,8 @@ class calcCBH:
             
             self.error_messages[s] = []
 
-            h_rung = self.check_rung_usability(s, h_cbh.highest_cbh, h_cbh.cbh_rcts, h_cbh.cbh_pdts, 'H')
-            f_rung = self.check_rung_usability(s, f_cbh.highest_cbh, f_cbh.cbh_rcts, f_cbh.cbh_pdts, 'F')
+            h_rung = self.check_rung_usability(s, h_cbh.highest_cbh, h_cbh.cbh_rcts, h_cbh.cbh_pdts, 'H', 1)
+            f_rung = self.check_rung_usability(s, f_cbh.highest_cbh, f_cbh.cbh_rcts, f_cbh.cbh_pdts, 'F', 9)
 
             if len(self.error_messages[s]) == 0:
                 del self.error_messages[s]
@@ -174,30 +185,35 @@ class calcCBH:
                     Hrxn[s], Hf[s] = self.Hf(s, cbh, max(h_rung, f_rung))
 
             # Choose the best possible method to assign to the energies dataframe
-            if not isnan(Hrxn[s]['anl0']):
-                self.energies.loc[s,'DfH'] = Hf[s]['anl0']
-                self.energies.loc[s,'DrxnH'] = Hrxn[s]['anl0']
-                self.energies.loc[s,'source'] = label+'_anl0'
-            elif not isnan(Hrxn[s]['f12b']):
-                self.energies.loc[s,'DfH'] = Hf[s]['f12b']
-                self.energies.loc[s,'DrxnH'] = Hrxn[s]['f12b']
-                self.energies.loc[s,'source'] = label+'_f12b'
-            elif not isnan(Hrxn[s]['m062x_dnlpo']) and not isnan(Hrxn[s]['wb97xd_dnlpo']):
-                self.energies.loc[s,'DfH'] = (Hf[s]['m062x_dnlpo'] + Hf[s]['wb97xd_dnlpo'])/2
-                self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x_dnlpo'] + Hrxn[s]['wb97xd_dnlpo'])/2
-                self.energies.loc[s,'source'] = label+'_dnlpo'
-            elif not isnan(Hrxn[s]['b2plypd3']):
-                self.energies.loc[s,'DfH'] = Hf[s]['b2plypd3']
-                self.energies.loc[s,'DrxnH'] = Hrxn[s]['b2plypd3']
-                self.energies.loc[s,'source'] = label+'_b2plypd3'
-            elif not isnan(Hrxn[s]['m062x']) and not isnan(Hrxn[s]['wb97xd']):
-                self.energies.loc[s,'DfH'] = (Hf[s]['m062x'] + Hf[s]['wb97xd'])/2
-                self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x'] + Hrxn[s]['wb97xd'])/2
-                self.energies.loc[s,'source'] = label+'_dft'
-            else:
-                self.energies.loc[s,'DfH'] = nan
-                self.energies.loc[s,'DrxnH'] = nan
-                self.energies.loc[s,'source'] = 'NaN'
+            final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
+            self.energies.loc[s, 'DfH'] = final_Hf
+            self.energies.loc[s, 'DrxnH'] = final_Hrxn
+            self.energies.loc[s, 'source'] = label
+
+            # if not isnan(Hrxn[s]['anl0']):
+            #     self.energies.loc[s,'DfH'] = Hf[s]['anl0']
+            #     self.energies.loc[s,'DrxnH'] = Hrxn[s]['anl0']
+            #     self.energies.loc[s,'source'] = label+'_anl0'
+            # elif not isnan(Hrxn[s]['f12b']):
+            #     self.energies.loc[s,'DfH'] = Hf[s]['f12b']
+            #     self.energies.loc[s,'DrxnH'] = Hrxn[s]['f12b']
+            #     self.energies.loc[s,'source'] = label+'_f12b'
+            # elif not isnan(Hrxn[s]['m062x_dnlpo']) and not isnan(Hrxn[s]['wb97xd_dnlpo']):
+            #     self.energies.loc[s,'DfH'] = (Hf[s]['m062x_dnlpo'] + Hf[s]['wb97xd_dnlpo'])/2
+            #     self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x_dnlpo'] + Hrxn[s]['wb97xd_dnlpo'])/2
+            #     self.energies.loc[s,'source'] = label+'_dnlpo'
+            # elif not isnan(Hrxn[s]['b2plypd3']):
+            #     self.energies.loc[s,'DfH'] = Hf[s]['b2plypd3']
+            #     self.energies.loc[s,'DrxnH'] = Hrxn[s]['b2plypd3']
+            #     self.energies.loc[s,'source'] = label+'_b2plypd3'
+            # elif not isnan(Hrxn[s]['m062x']) and not isnan(Hrxn[s]['wb97xd']):
+            #     self.energies.loc[s,'DfH'] = (Hf[s]['m062x'] + Hf[s]['wb97xd'])/2
+            #     self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x'] + Hrxn[s]['wb97xd'])/2
+            #     self.energies.loc[s,'source'] = label+'_dft'
+            # else:
+            #     self.energies.loc[s,'DfH'] = nan
+            #     self.energies.loc[s,'DrxnH'] = nan
+            #     self.energies.loc[s,'source'] = 'NaN'
 
         if len(self.error_messages.keys()) != 0:
             print(f'Process completed with errors in {len(self.error_messages.keys())} species')
@@ -207,7 +223,7 @@ class calcCBH:
 
         return self.energies[['DfH', 'DrxnH', 'uncertainty', 'source']]
 
-    def Hf(self, s, cbh, cbh_rung):
+    def Hf(self, s: str, cbh: CBH.buildCBH, cbh_rung: int) -> tuple:
         """
         Helper method to calculate the heat of formation (and reaction) given 
         a species and it's cbh scheme (CBH.buildCBH object).
@@ -314,7 +330,7 @@ class calcCBH:
         return Hrxn, Hf
 
 
-    def calc_Hf_allrungs(self, s, saturate=1):
+    def calc_Hf_allrungs(self, s: str, saturate: int=1) -> tuple:
         """
         Calculates the Hf of a given species at each CBH rung.
         Assumes that calc_Hf has already been run or the database
@@ -347,22 +363,131 @@ class calcCBH:
         return Hrxn, Hf
 
 
-    def choose_best_method(self):
-        return
+    def choose_best_method(self, Hrxn: dict, Hf: dict, label: str):
+        """
+        Chooses the best level of theory to log in self.energies dataframe.
 
-    
-    def _weight(self, Hrxn1, Hrxn2):
+        ARGUMENTS
+        ---------
+        :Hrxn:      [dict] holds heat of reaction for each level of theory
+                        {theory : H_rxn}
+        :Hf:        [dict] holds heat of formation for each level of theory
+                        {theory : H_f}
+        :label:     [str] String denoting CBH level - prefix for 'source'
+
+        RETURNS
+        -------
+        (weighted_Hrxn, weighted_Hf, new_label)
+
+        :weighted_Hrxn:     [float] heat of reaction for best level of theory
+        :weighted_Hf:       [float] heat of formation for best level of theory
+        :new_label:         [str] label to be used for self.energies['source']
+        """
+
+        # Choose the best possible method to assign to the energies dataframe
+        if all([isnan(v) for v in Hrxn.values()]):
+            # if all computed heats of reactions are NaN
+            return nan, nan, 'NaN'
+
+        else:
+            # list of all levels of theory in Hf and Hrxn
+            hrxn_theories = set(list(Hrxn.keys()))
+
+            # cyle through ascending rank
+            for rank in set(list(self.rankings.keys())):
+                # record theories in Hrxn dict for a given rank
+                theories_in_hrxn = [theory for theory in set(self.rankings[rank]) if theory in hrxn_theories]
+
+                if rank == 0:
+                    continue # next rank: we ignore rank=0
+
+                elif len(theories_in_hrxn) == 0:
+                    # go to next rank if none exist for current one
+                    continue
+
+                elif len(theories_in_hrxn) == 1:
+                    # only one level of theory in this rank
+                    theory = theories_in_hrxn[0]
+
+                    # ensure computed Hrxn is not NaN
+                    if not isnan(Hrxn[theory]):
+                        return Hrxn[theory], Hf[theory], label+'_'+theory
+                    else:
+                        continue
+                
+                # when multiple equivalent rankings
+                elif len(theories_in_hrxn) >= 1:
+                    theories = []
+                    hrxns = []
+                    hfs = []
+
+                    for theory in theories_in_hrxn:
+                        if not isnan(Hrxn[theory]):
+                            theories.append(theory)
+                            hrxns.append(Hrxn[theory])
+                            hfs.append(Hf[theory])
+                        else:
+                            continue
+                    
+                    # in case all are nan
+                    if len(hrxns) == 0:
+                        continue
+                    
+                    # in case only 1 was not nan
+                    elif len(hrxns) == 1:
+                        return weighted_hrxn[0], weighted_hf[0], label + '_' + theories[0]
+                    
+                    else:
+                        # generate weighted Hrxn and Hf
+                        rank_weights = np.array(self._weight(*hrxns))
+                        weighted_hrxn = np.sum(np.array(hrxns) * rank_weights)
+                        weighted_hf = np.sum(np.array(hfs) * rank_weights)
+
+                        # self.energies.loc[s, 'Dfh'] = weighted_hf
+                        # self.energies.loc[s, 'DrxnH'] = weighted_hrxn
+
+                        # create new label that combines all levels of theory
+                        ### TODO: can get super long !!! ###
+                        new_label = '' + label
+                        for i, t in enumerate(theories):
+                            if i == 0:
+                                new_label += '_'+t
+                            else:
+                                new_label += '+'+t
+
+                        return weighted_hrxn, weighted_hf, new_label
+
+        return nan, nan, 'NaN'
+
+
+    def _weight(self, *Hrxn: float):
         """
         Weighting for combining different CBH schemes at the same level.
         w_j = |∆Hrxn,j|^-1 / sum_k(|∆Hrxn,k|^-1)
-        """
-        w1 = 1/abs(Hrxn1) / (1/abs(Hrxn1) + 1/abs(Hrxn2))
-        w2 = 1/abs(Hrxn2) / (1/abs(Hrxn1) + 1/abs(Hrxn2))
 
-        return w1, w2
+        TODO: deal with Hrxn==0
+
+        ARGUMENTS
+        ---------
+        :Hrxn:  [float] Heat of reactions to weight
+        """
+        denom = 0
+        for h in Hrxn:
+            if h == 0:
+                # avoids infinity, but introduces error...
+                h += 1e-10
+            denom += (1/abs(h))
+
+        weights = []
+        for h in Hrxn:
+            if h == 0:
+                h += 1e-10
+            weights.append(1/abs(h) / denom)
+
+        return weights
 
     
-    def check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str): 
+    def check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str, saturate:int=1): 
         """
         Method that checks a given CBH rung's usability by looking for missing 
         reactants or whether all precursors were derived using CBH schemes of 
@@ -427,10 +552,26 @@ class calcCBH:
                 self.error_messages[s].append(f"Missing reactant(s): {missing_precursors}\nCBH-{label} rung will move down to {test_rung}.")
                 continue
 
+            # Try checking precursors' reactants
+            ### Unfinished
+            # This would get tricky since I would need to check source for each of these species too
+            # total_precursors = add_dicts(cbh_rcts[test_rung], cbh_pdts[test_rung])
+            # for precursor in total_precursors.keys():
+            #     p_cbh = CBH.buildCBH(precursor, saturate)
+            #     p_rcts = add_dicts(p_cbh.cbh_pdts, p_cbh.cbh_rcts)
+
+            
+            # check sources of all reactants
+            ####
+            # TODO
+            # Need to change so that if the source of the target species is worse than those of the reactants its okay
+            # ex. if all reactants are f12, but target will use dnlpo, that is totally fine
+            # TODO
+            # String parsing won't work with new ranking system
+            ####
             sources = [s.split('_')[0] for s in sources]
             set_source = list(set(sources))
 
-            # check sources of all reactants
             if len(set_source) == 1: # homogenous sources
                 if set_source[0] != 'ATcT': 
                     self.error_messages[s].append(f'All precursor species for CBH-{test_rung}-{label} had the same reference level of theory. \n\tThis implies that this rung is equivalent to CBH-{test_rung-1}-{label}. \n\tUsing CBH-{test_rung-1}-{label} instead.')
@@ -442,6 +583,14 @@ class calcCBH:
                 return test_rung
         return test_rung
 
+    
+    def rank_approach(self):
+        """
+        Collects the computational methods and ranks them based on level of theory.
+        This is done by user's input of data.
+        """
+        
+        return 
     
     def print_errors(self):
         """

@@ -1,0 +1,25 @@
+# This file contains the rankings for different levels of theory.
+# It uses the same ranking as RMG for uniformity:
+# https://reactionmechanismgenerator.github.io/RMG-Py/users/rmg/kinetics.html
+# 
+# Rank  | Example Methods
+# 1     | Experiment/FCI
+# 2     | W4/HEAT with very good (2-d if necessary) rotors
+# 3     | CCSD(T)-F12/cc-PVnZ with n>2 or CCSD(T)-F12/CBS with good (2-d if necessary) rotors
+# 4     | CCSD(T)-F12/DZ, with good (2-d if necessary) rotors
+# 5     | CBS-QB3 with 1-d rotors
+# 6     | Double-hybrid DFT with 1-D rotors
+# 7     | Hybrid DFT (w/ dispersion) (rotors if necessary)
+# 8     | B3LYP & lower DFT (rotors if necessary)
+# 9     | Group Additivity
+# 10    | Direct Estimate/Guess
+# 11    | Average of Rates
+# 0     | General Estimate (Never used in generation)
+
+anl0: 1
+f12b: 3
+m062x_dnlpo: 4
+wb97xd_dnlpo: 4
+b2plypd3: 6
+m062x: 7
+wb97xd: 7

@@ -45,8 +45,6 @@ class buildCBH:
                     use of F2 which leads to a smaller number of precursor molecules
     count_repeats   [-static] Count the number of repeats in a list and returns a 
                     dictionary
-    add_dicts       [-static] Add dicts together by adding up values with the same 
-                    keys
     replace_atoms   [-static] Replace specified atoms with a desired atom
     visualize       Used to visualize CBH reactions in Jupyter Notebook. 
     """
@@ -208,7 +206,7 @@ class buildCBH:
             else:
                 # Get the previous products + branch
                 if len(new_branches) != 0:
-                    cbh_rcts[cbh_level] = self.add_dicts(cbh_rcts[cbh_level], self.count_repeats(new_branches))
+                    cbh_rcts[cbh_level] = add_dicts(cbh_rcts[cbh_level], self.count_repeats(new_branches))
 
             # 3. Simplify chemical equations --> generate stoichiometry
             all_residuals = list(cbh_pdts[cbh_level].keys()) + list(cbh_rcts[cbh_level].keys())
@@ -388,32 +386,6 @@ class buildCBH:
 
 
     @staticmethod
-    def add_dicts(dict1, dict2) -> dict:
-        """
-        Add the values within a dictionary together for matching keys.
-        All dictionaries have the form: {residual SMILES : num occurences}}
-
-        ARGUMENTS
-        ---------
-        :dict1: [dict] the first dictionary
-        :dict2: [dict] the second dictionary 
-
-        RETURNS
-        -------
-        :out_dict: [dict] the output dictionary where the number of matching 
-                        SMILEs are added together
-        """
-        dd = defaultdict(list) # dictionary with elements of a list
-        for d in (dict1, dict2):
-            for key, value in d.items():
-                # {key: [val1, val2]}
-                dd[key].append(value)
-        # add up the values for each key
-        out_dict = {key:sum(dd[key]) for key in dd.keys()}
-        return out_dict
-
-
-    @staticmethod
     def replace_atoms(mol, dictionary, target, change):
         """
         Replace the 'target' atom with a 'change' atom.
@@ -586,6 +558,35 @@ def graph2mol(graph, return_smile=False):
     if return_smile:
         mol = Chem.CanonSmiles(Chem.MolToSmiles(mol))
     return mol
+
+
+def add_dicts(dict1, dict2) -> dict:
+    """
+    Add the values within a dictionary together for matching keys.
+    All dictionaries have the form: {residual SMILES : num occurences}}
+
+    ARGUMENTS
+    ---------
+    :dict1: [dict] the first dictionary
+    :dict2: [dict] the second dictionary 
+
+    RETURNS
+    -------
+    :out_dict: [dict] the output dictionary where the number of matching 
+                    SMILEs are added together
+    """
+    dd = defaultdict(list) # dictionary with elements of a list
+    for d in (dict1, dict2):
+        for key, value in d.items():
+            # {key: [val1, val2]}
+            dd[key].append(value)
+    # add up the values for each key
+    out_dict = {key:sum(dd[key]) for key in dd.keys()}
+    # remove items where values = 0
+    for k, v in out_dict.items():
+        if v == 0:
+            del out_dict[k]
+    return out_dict
 
 
 def main():
