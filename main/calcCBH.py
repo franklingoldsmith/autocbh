@@ -1,10 +1,11 @@
 import CBH
 from CBH import add_dicts
+import numpy as np
 import pandas as pd
-from numpy import matmul, nan, isnan
+from numpy import nan, isnan
 from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs, CanonSmiles
 from data.MolData import load_rankings
-import numpy as np
+from Hrxn_methods import anl0_hrxn, coupled_cluster
 
 
 class calcCBH:
@@ -280,7 +281,7 @@ class calcCBH:
         # heat of rxn
         coeff_arr = pd.DataFrame(rxn).T.sort_index(axis=1).values * -1 # products are negative, and reactants are positive
         nrg_arr = self.energies.loc[list(rxn[s].keys()), nrg_cols].sort_index().values
-        matrix_mult = matmul(coeff_arr, nrg_arr)
+        matrix_mult = np.matmul(coeff_arr, nrg_arr)
         delE = {nrg_cols[i]:matrix_mult[0][i] for i in range(len(nrg_cols))}
         # Subtract off DfH from the energies column in case it is not 0
         # we must assert that the DfH is not computed for the target species
@@ -290,37 +291,20 @@ class calcCBH:
         Hrxn['ref'] = delE['DfH']
 
         # Hrxn anl0
-        # print(rxn[s])
         if 0 not in self.energies.loc[rxn[s].keys(),'avqz'].values:
-            cbs = cbs_qz_5z_low * delE['avqz'] + cbs_qz_5z_high * delE['av5z']
-            core = cbs_tz_qz_low * (delE['core_0_tz'] - delE['core_X_tz']) + cbs_tz_qz_high * (delE['core_0_qz'] - delE['core_X_qz'])
-            ccTQ = delE['ccQ'] - delE['ccT']
-            ci = delE['ci_DK'] - delE['ci_NREL']
-            anharm = delE['zpe_anharm'] - delE['zpe_harm'] 
-
-            Hrxn_anl0 = (cbs + delE['zpe']) * hartree_to_kJpermole
-            # don't add corrections if they are over 4 kJ/mol
-            if abs(core * hartree_to_kJpermole) < 4.0:
-                Hrxn_anl0 += core * hartree_to_kJpermole
-            if abs(ccTQ * hartree_to_kJpermole) < 4.0:
-                Hrxn_anl0 += ccTQ * hartree_to_kJpermole
-            if abs(ci * hartree_to_kJpermole) < 4.0:
-                Hrxn_anl0 += ci * hartree_to_kJpermole
-            if abs(anharm) < 4.0:
-                Hrxn_anl0 += anharm # already kJ/mol
-            Hrxn['anl0'] = Hrxn_anl0
+            Hrxn['anl0'] = anl0_hrxn(delE)
         
         # Hrxn f12b
         if 0 not in self.energies.loc[rxn[s].keys(),'f12b'].values:
-            Hrxn['f12b'] = (delE['f12b'] + delE['b2plypd3_zpe']) * hartree_to_kJpermole
+            Hrxn['f12b'] = coupled_cluster(delE, 'f12b', 'b2plypd3_zpe')
             Hrxn['b2plypd3'] = delE['b2plypd3_E0'] * hartree_to_kJpermole
 
         # Hrxn m062x
-        Hrxn['m062x_dnlpo'] = (delE['m062x_dnlpo'] + delE['m062x_zpe']) * hartree_to_kJpermole
+        Hrxn['m062x_dnlpo'] = coupled_cluster(delE, 'm062x_dnlpo', 'm062x_zpe')
         Hrxn['m062x'] = delE['m062x_E0'] * hartree_to_kJpermole
 
         # Hrxn wb97xd
-        Hrxn['wb97xd_dnlpo'] = (delE['wb97xd_dnlpo'] + delE['wb97xd_zpe']) * hartree_to_kJpermole
+        Hrxn['wb97xd_dnlpo'] = coupled_cluster(delE, 'wb97xd_dnlpo', 'wb97xd_zpe')
         Hrxn['wb97xd'] = delE['wb97xd_E0'] * hartree_to_kJpermole
         
         # Hf
@@ -465,23 +449,39 @@ class calcCBH:
         Weighting for combining different CBH schemes at the same level.
         w_j = |∆Hrxn,j|^-1 / sum_k(|∆Hrxn,k|^-1)
 
-        TODO: deal with Hrxn==0
-
         ARGUMENTS
         ---------
-        :Hrxn:  [float] Heat of reactions to weight
+        :Hrxn:      [float] Heat of reactions to weight
+
+        RETURNS
+        -------
+        :weights:   [list] list of weights (sum=1)
         """
+        
+        # if Hrxn is 0 for any species, return one-hot encoding
+        if 0 in list(Hrxn):
+            Hrxn = np.array(list(Hrxn))
+            ind = np.where(Hrxn==0)[0]
+
+            if len(ind) == 1:
+                weights = np.zeros((len(Hrxn)))
+                weights[ind[0]] = 1
+                return weights.tolist()
+
+            elif len(ind) > 1:
+                weights = np.zeros((len(Hrxn)))
+                weights[ind] = 1 / len(ind)
+                return weights.tolist()
+        
+        # more common case where Hrxn is not exactly 0
         denom = 0
+        # calculate denom
         for h in Hrxn:
-            if h == 0:
-                # avoids infinity, but introduces error...
-                h += 1e-10
             denom += (1/abs(h))
 
         weights = []
+        # calculate weights
         for h in Hrxn:
-            if h == 0:
-                h += 1e-10
             weights.append(1/abs(h) / denom)
 
         return weights
