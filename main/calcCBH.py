@@ -5,7 +5,9 @@ import pandas as pd
 from numpy import nan, isnan
 from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs, CanonSmiles
 from data.MolData import load_rankings
-from Hrxn_methods import anl0_hrxn, coupled_cluster
+from Hrxn_methods import anl0_hrxn, sum_Hrxn
+import os
+import yaml
 
 
 class calcCBH:
@@ -34,7 +36,7 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, species_list, saturate=1, rankings=''):
+    def __init__(self, species_list, saturate:int or str=1, rankings:str='', methods: list=[], force_generate_database=False):
         """
         ARGUMENTS
         ---------
@@ -42,17 +44,64 @@ class calcCBH:
         :saturate:      [int or str] Integer representing the atomic number 
                             of the element to saturate residual species with. 
                             String representation of the element also works.
+                            (default=1)
         :rankings:      [str] Filepath to rankings yaml file for levels of 
-                            theory.
+                            theory. (default='data/rankings.yaml')
+        :methods:       [list] List of method names to use for calculation
+                            of HoF. If empty, use all available methods.
+                            (default=[])
         """
 
         self.species_list = [CanonSmiles(species) for species in species_list] # list of SMILES strings
         self.saturate = saturate # saturation species
 
+        # Load the methods to use
+        with open('data/methods_keys.yaml', 'r') as f:
+            self.methods_keys_dict = yaml.safe_load(f)
+
+        # TODO: Check whether database related files (database, method_keys, alternative_CBH) exist or force download
+
+        if len(methods)==0:
+            # use all available methods in methods_keys dictionary
+            self.methods = list(self.methods_keys_dict.keys())
+            self.methods_keys = []
+            for m in self.methods_keys_dict.keys():
+                self.methods_keys.extend(self.methods_keys_dict[m])
+                self.methods_keys = list(set(self.methods_keys))
+        else:
+            methods_keys_list = list(self.methods_keys_dict.keys())
+            for m in methods_keys_list:
+                if m not in methods:
+                    del self.methods_keys_dict[m]
+            self.methods = methods
+            self.methods_keys = []
+            for m in self.methods:
+                self.methods_keys.extend(self.methods_keys_dict[m])
+                self.methods_keys = list(set(self.methods_keys))
+        
+        # Load rankings
         if rankings == '':
             rankings = 'data/rankings.yaml'
         self.rankings = load_rankings(rankings)
+        # remove items from rankings list that aren't needed based on user selected methods
+        del_methods = {} # stores methods to delete from self.rankings
+        for rank in self.rankings.keys():
+            if rank == 0 or rank == 1:
+                continue
+            for m in self.rankings[rank]:
+                if m not in self.methods_keys_dict.keys():
+                    if rank not in del_methods.keys():
+                        del_methods[rank] = [m]
+                    else:
+                        del_methods[rank].append(m)
+        for rank, method_list in del_methods.items():
+            if len(del_methods[rank]) == len(self.rankings[rank]):
+                del self.rankings[rank]
+            else:
+                self.rankings[rank].remove(*method_list)
         
+        # TODO: create energies DataFrame using only self.method_keys
+
         self.coefficient_df = self.generate_CBHs(self.species_list, saturate)
         self.precursors = list(set(pd.concat(self.coefficient_df,axis=1).columns.values))
 
@@ -191,31 +240,6 @@ class calcCBH:
             self.energies.loc[s, 'DrxnH'] = final_Hrxn
             self.energies.loc[s, 'source'] = label
 
-            # if not isnan(Hrxn[s]['anl0']):
-            #     self.energies.loc[s,'DfH'] = Hf[s]['anl0']
-            #     self.energies.loc[s,'DrxnH'] = Hrxn[s]['anl0']
-            #     self.energies.loc[s,'source'] = label+'_anl0'
-            # elif not isnan(Hrxn[s]['f12b']):
-            #     self.energies.loc[s,'DfH'] = Hf[s]['f12b']
-            #     self.energies.loc[s,'DrxnH'] = Hrxn[s]['f12b']
-            #     self.energies.loc[s,'source'] = label+'_f12b'
-            # elif not isnan(Hrxn[s]['m062x_dnlpo']) and not isnan(Hrxn[s]['wb97xd_dnlpo']):
-            #     self.energies.loc[s,'DfH'] = (Hf[s]['m062x_dnlpo'] + Hf[s]['wb97xd_dnlpo'])/2
-            #     self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x_dnlpo'] + Hrxn[s]['wb97xd_dnlpo'])/2
-            #     self.energies.loc[s,'source'] = label+'_dnlpo'
-            # elif not isnan(Hrxn[s]['b2plypd3']):
-            #     self.energies.loc[s,'DfH'] = Hf[s]['b2plypd3']
-            #     self.energies.loc[s,'DrxnH'] = Hrxn[s]['b2plypd3']
-            #     self.energies.loc[s,'source'] = label+'_b2plypd3'
-            # elif not isnan(Hrxn[s]['m062x']) and not isnan(Hrxn[s]['wb97xd']):
-            #     self.energies.loc[s,'DfH'] = (Hf[s]['m062x'] + Hf[s]['wb97xd'])/2
-            #     self.energies.loc[s,'DrxnH'] = (Hrxn[s]['m062x'] + Hrxn[s]['wb97xd'])/2
-            #     self.energies.loc[s,'source'] = label+'_dft'
-            # else:
-            #     self.energies.loc[s,'DfH'] = nan
-            #     self.energies.loc[s,'DrxnH'] = nan
-            #     self.energies.loc[s,'source'] = 'NaN'
-
         if len(self.error_messages.keys()) != 0:
             print(f'Process completed with errors in {len(self.error_messages.keys())} species')
             print(f'These errors are likely to have propagated for the calculation of heats of formation of larger species.')
@@ -246,13 +270,6 @@ class calcCBH:
         """
 
         hartree_to_kJpermole = 2625.499748 # (kJ/mol) / Hartree
-        # these constants are used for basis set extrapolation
-        cbs_tz_qz = 3.0**3.7 / (4.0**3.7 - 3.0**3.7)
-        cbs_tz_qz_low = - cbs_tz_qz
-        cbs_tz_qz_high = 1.0 + cbs_tz_qz
-        cbs_qz_5z = 4.0**3.7 / (5.0**3.7 - 4.0**3.7)
-        cbs_qz_5z_low = - cbs_qz_5z
-        cbs_qz_5z_high = 1.0 + cbs_qz_5z
 
         rxn = {} 
         # add rxn of a target molecule's highest possible CBH level
@@ -268,15 +285,15 @@ class calcCBH:
                 print(f'\t{pnt}')
             return # break
         
+        # TODO: Fix this since it will break the caclulation and user can't control order
         for precursor in rxn[s]:
             if self.energies.loc[precursor,'source'] ==  'NaN':
                 print(f'Must restart with this molecule first: {precursor}')
                 return 
         
         # energy columns needed for calculation
-        nrg_cols = ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
-        'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
-        'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo','DfH']
+        nrg_cols = ['DfH']
+        nrg_cols.extend(self.methods_keys)
 
         # heat of rxn
         coeff_arr = pd.DataFrame(rxn).T.sort_index(axis=1).values * -1 # products are negative, and reactants are positive
@@ -287,25 +304,21 @@ class calcCBH:
         # we must assert that the DfH is not computed for the target species
         delE['DfH'] = delE['DfH'] - self.energies.loc[s, 'DfH']
         
-        Hrxn = {'ref':nan, 'anl0':nan, 'f12b':nan, 'm062x_dnlpo':nan, 'wb97xd_dnlpo':nan, 'b2plypd3':nan, 'm062x':nan, 'wb97xd':nan}
-        Hrxn['ref'] = delE['DfH']
+        Hrxn = {'ref':delE['DfH']}
+        Hrxn = {**Hrxn, **dict(zip(self.methods, np.full(len(self.methods), nan)))}
 
-        # Hrxn anl0
-        if 0 not in self.energies.loc[rxn[s].keys(),'avqz'].values:
-            Hrxn['anl0'] = anl0_hrxn(delE)
-        
-        # Hrxn f12b
-        if 0 not in self.energies.loc[rxn[s].keys(),'f12b'].values:
-            Hrxn['f12b'] = coupled_cluster(delE, 'f12b', 'b2plypd3_zpe')
-            Hrxn['b2plypd3'] = delE['b2plypd3_E0'] * hartree_to_kJpermole
-
-        # Hrxn m062x
-        Hrxn['m062x_dnlpo'] = coupled_cluster(delE, 'm062x_dnlpo', 'm062x_zpe')
-        Hrxn['m062x'] = delE['m062x_E0'] * hartree_to_kJpermole
-
-        # Hrxn wb97xd
-        Hrxn['wb97xd_dnlpo'] = coupled_cluster(delE, 'wb97xd_dnlpo', 'wb97xd_zpe')
-        Hrxn['wb97xd'] = delE['wb97xd_E0'] * hartree_to_kJpermole
+        # TODO: How to choose what functions to include
+        # in most cases, it is just summing the values in method_keys for a given method
+        for rank, m_list in self.rankings.items():
+            # This is assuming rank=1 is experimental and already measures Hf
+            if rank == 0 or rank == 1:
+                continue
+            for m in m_list:
+                if m == 'anl0':
+                    if 0 not in self.energies.loc[rxn[s].keys(), ['avqz', 'av5z', 'zpe']].values:
+                        Hrxn['anl0'] = anl0_hrxn(delE)
+                elif 0 not in self.energies.loc[rxn[s].keys(), self.methods_keys_dict[m]].values:
+                    Hrxn[m] = sum_Hrxn(delE, *self.methods_keys_dict[m])
         
         # Hf
         Hf = {k:v - Hrxn['ref'] for k,v in Hrxn.items()}
@@ -426,9 +439,6 @@ class calcCBH:
                         rank_weights = np.array(self._weight(*hrxns))
                         weighted_hrxn = np.sum(np.array(hrxns) * rank_weights)
                         weighted_hf = np.sum(np.array(hfs) * rank_weights)
-
-                        # self.energies.loc[s, 'Dfh'] = weighted_hf
-                        # self.energies.loc[s, 'DrxnH'] = weighted_hrxn
 
                         # create new label that combines all levels of theory
                         ### TODO: can get super long !!! ###
@@ -568,6 +578,11 @@ class calcCBH:
             # ex. if all reactants are f12, but target will use dnlpo, that is totally fine
             # TODO
             # String parsing won't work with new ranking system
+
+            ###
+            # Maybe...
+            # Compute the Hf for rung below and if equal, move down a rung...?
+            #   Expensive compute... but mathmatically correct
             ####
             sources = [s.split('_')[0] for s in sources]
             set_source = list(set(sources))
@@ -583,14 +598,6 @@ class calcCBH:
                 return test_rung
         return test_rung
 
-    
-    def rank_approach(self):
-        """
-        Collects the computational methods and ranks them based on level of theory.
-        This is done by user's input of data.
-        """
-        
-        return 
     
     def print_errors(self):
         """

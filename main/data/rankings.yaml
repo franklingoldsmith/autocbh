@@ -16,7 +16,8 @@
 # 11    | Average of Rates
 # 0     | General Estimate (Never used in generation)
 
-anl0: 1
+ATcT: 1
+anl0: 2
 f12b: 3
 m062x_dnlpo: 4
 wb97xd_dnlpo: 4
