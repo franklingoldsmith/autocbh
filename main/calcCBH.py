@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 from numpy import nan, isnan
 from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs, CanonSmiles
-from data.MolData import load_rankings
-from Hrxn_methods import anl0_hrxn, sum_Hrxn
+from data.molData import load_rankings
+from hrxnMethods import anl0_hrxn, sum_Hrxn
 import os
 import yaml
 
