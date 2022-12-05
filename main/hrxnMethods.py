@@ -68,8 +68,8 @@ def anl0_hrxn(delE: dict, *args) -> float:
 
 def sum_Hrxn(delE:dict, *args:str) -> float:
     """
-    Calculates the heat of reaction for a generic coupled cluster
-    result. 
+    Calculates the heat of reaction for a generic method by 
+    simply summing all of the relevant energies. 
 
     ARGUMENTS
     ---------
