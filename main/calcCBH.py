@@ -150,9 +150,9 @@ class calcCBH:
         for species in species_list:
             cbh = CBH.buildCBH(species, saturate) # generate CBH scheme
             # add to dictionary / lists
-            all_rcts[cbh.smile] = cbh.cbh_rcts
-            all_pdts[cbh.smile] = cbh.cbh_pdts
-            all_targets.append(cbh.smile) # add standardized SMILES string representations
+            all_rcts[cbh.smiles] = cbh.cbh_rcts
+            all_pdts[cbh.smiles] = cbh.cbh_pdts
+            all_targets.append(cbh.smiles) # add standardized SMILES string representations
         
         # Find the highest CBH rung of all the CBH schemes
         highest_rung_per_molec = [max(pdt.keys()) for pdt in all_pdts.values()]
@@ -210,8 +210,6 @@ class calcCBH:
                     KeyError("Provided int of saturation element is not present in Periodic Table.")
             else:
                 TypeError("Elements within saturation list must be int or str.")
-        saturate_nums = list(set(saturate_nums)) # in case repeats
-        saturate_syms = list(set(saturate_syms))
 
         Hf = {}
         Hrxn = {}
@@ -226,7 +224,7 @@ class calcCBH:
             cbhs_rungs = []
             self.error_messages[s] = []
             for i, sat in enumerate(saturate_nums):
-                cbhs.append(CBH.buildCBH(s,sat))
+                cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
                 cbhs_rungs.append(self.check_rung_usability(s, cbhs[-1].highest_cbh, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i], sat))
 
             if len(self.error_messages[s]) == 0:
@@ -276,50 +274,6 @@ class calcCBH:
             self.energies.loc[s, 'DfH'] = final_Hf
             self.energies.loc[s, 'DrxnH'] = final_Hrxn
             self.energies.loc[s, 'source'] = label
-
-        # cycle through those molecules
-        # for s in sorted_species:
-        #     h_cbh = CBH.buildCBH(s, 1) # hydrogenated
-        #     f_cbh = CBH.buildCBH(s, 9) # fluorinated
-            
-        #     self.error_messages[s] = []
-
-        #     h_rung = self.check_rung_usability(s, h_cbh.highest_cbh, h_cbh.cbh_rcts, h_cbh.cbh_pdts, 'H', 1)
-        #     f_rung = self.check_rung_usability(s, f_cbh.highest_cbh, f_cbh.cbh_rcts, f_cbh.cbh_pdts, 'F', 9)
-
-        #     if len(self.error_messages[s]) == 0:
-        #         del self.error_messages[s]
-
-        #     cbh_ls = []
-        #     if h_rung > f_rung:
-        #         cbh_ls = [h_cbh]
-        #         label = 'CBH-' + str(h_rung) + '-H'
-        #     elif f_rung > h_rung:
-        #         cbh_ls = [f_cbh]
-        #         label = 'CBH-' + str(f_rung) + '-F'
-        #     elif h_rung == f_rung:
-        #         cbh_ls = [h_cbh, f_cbh]
-        #         label = 'CBH-' + str(h_rung) + '-avg'
-
-        #     for cbh in cbh_ls:
-        #         if len(cbh_ls) > 1: # if saturation of H and F yield the same highest rung
-        #             # average the heats of formation and reactions b/w the two saturation strategies
-        #             Hrxn_H, Hf_H = self.Hf(s, cbh_ls[0], h_rung)
-        #             Hrxn_F, Hf_F = self.Hf(s, cbh_ls[1], f_rung)
-        #             # weights (HrxnH, HrxnF) --> only apply to Hf for now
-        #             weights = {k: self._weight(v, Hrxn_F[k]) for k,v in Hrxn_H.items()} 
-        #             # used to be {k: (v + H_F[k])/2 for k,v in H_H.items()}
-        #             Hrxn[s] = {k: weights[k][0]*v + weights[k][1]*Hrxn_F[k] for k,v in Hrxn_H.items()}
-        #             Hf[s] = {k: weights[k][0]*v + weights[k][1]*Hf_F[k] for k,v in Hf_H.items()}
-        #             break
-        #         else:
-        #             Hrxn[s], Hf[s] = self.Hf(s, cbh, max(h_rung, f_rung))
-
-        #     # Choose the best possible method to assign to the energies dataframe
-        #     final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
-        #     self.energies.loc[s, 'DfH'] = final_Hf
-        #     self.energies.loc[s, 'DrxnH'] = final_Hrxn
-        #     self.energies.loc[s, 'source'] = label
 
         if len(self.error_messages.keys()) != 0:
             print(f'Process completed with errors in {len(self.error_messages.keys())} species')
@@ -669,8 +623,15 @@ class calcCBH:
             # Compute the Hf for rung below and if equal, move down a rung...?
             #   Expensive compute... but mathmatically correct
             ####
-            sources = [s.split('_')[0] for s in sources]
-            set_source = list(set(sources))
+
+            # sources will be np.nan if not computed yet
+            if False not in [type(s)==str for s in sources]:
+                sources = [s.split('_')[0] for s in sources]
+                set_source = list(set(sources))
+            else:
+                # if a species Hf hasn't been computed yet, it's source will be type==float, so move down a rung
+                test_rung -= 1
+                continue
 
             if len(set_source) == 1: # homogenous sources
                 if set_source[0] != 'ATcT': 

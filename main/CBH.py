@@ -13,7 +13,7 @@ class buildCBH:
     ATTRIBUTES
     ----------
     :mol:           [RDKit Mol obj]
-    :smile:         [str] RDKit's SMILES respresentation of the target molecule
+    :smiles:         [str] RDKit's SMILES respresentation of the target molecule
     :graph:         [IGraph graph obj] IGraph's graph representation of the target 
                                         molecule
     :graph_adj:     [np array] adjacency matrix of target molecule graph
@@ -21,7 +21,7 @@ class buildCBH:
     
     Same as above but with explicit hydrogens
     :mol_h:         [RDKit Mol obj] molecule 
-    :smile_h:       [str] RDKit's SMILES respresentation of the target molecule
+    :smiles_h:       [str] RDKit's SMILES respresentation of the target molecule
     :graph_h:       [IGraph graph obj] IGraph's graph representation of the target 
                                         molecule
     :graph_adj_h:   [np array] adjacency matrix of target molecule graph
@@ -49,21 +49,35 @@ class buildCBH:
     visualize       Used to visualize CBH reactions in Jupyter Notebook. 
     """
 
-    def __init__(self, smile, saturate=1, ignore_F2=True):
+    def __init__(self, smiles:str, saturate=1, allow_overshoot=False, ignore_F2=True):
         """
         Constructs the attributes of buildCBH class.
 
         ARGUMENTS
         ---------
-        :smile:         [str] SMILES string represnting a molecule
-        :saturate:      [int or str] (default=1 or 'H') The int or str representation 
-                        of the default molecule that will saturate the heavy atoms. 
-                        Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17). 
-                        Currently it only supports halogens. 
-        :ignore_F2:     [bool] (default=True) Avoid using F2 when saturate='F'
+        :smiles:             [str] SMILES string represnting a molecule
+
+        :saturate:          [int or str] (default=1 or 'H') The int or str 
+                                representation of the default molecule that will 
+                                saturate the heavy atoms. Usually 'H' (1), but 
+                                is also often 'F' (9) or 'Cl' (17). 
+                                Currently it only supports halogens. 
+
+        :allow_overshoot:   [bool] (default=False)
+                                Choose to allow a precursor to have a substructure 
+                                of the target species, as long as the explicit 
+                                target species does not show up on the product 
+                                side. 
+                Ex) if species='CC(F)(F)F' and saturate=9, the highest CBH rung 
+                    would be: 
+                    False - CBH-0-F
+                    True - CBH-1-F (even though C2F6 is generated as a precursor)
+
+        :ignore_F2:         [bool] (default=True) Avoid using fluorine gas (F2)
+                                 when saturate='F'
         """
-        self.mol = Chem.MolFromSmiles(smile) # RDkit molecule object
-        self.smile = Chem.CanonSmiles(smile) # rewrite SMILES str in standard forms
+        self.mol = Chem.MolFromSmiles(smiles) # RDkit molecule object
+        self.smiles = Chem.CanonSmiles(smiles) # rewrite SMILES str in standard forms
 
         self.graph = mol2graph(self.mol) # Graph representation of molecule
         self.graph_adj = np.array(self.graph.get_adjacency().data) # Graph Adjacency Matrix
@@ -71,36 +85,47 @@ class buildCBH:
 
         # Molecule attributes with explicit hydrogens
         self.mol_h = Chem.AddHs(self.mol)
-        self.smile_h = Chem.MolToSmiles(Chem.AddHs(self.mol_h))
+        self.smiles_h = Chem.MolToSmiles(Chem.AddHs(self.mol_h))
         self.graph_h = mol2graph(self.mol_h)
         self.graph_adj_h = np.array(self.graph_h.get_adjacency().data)
         self.graph_dist_h = np.array(self.graph_h.shortest_paths())
 
         # Build CBH Scheme
         self.ignore_F2 = ignore_F2
-        self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate)
+        self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate, allow_overshoot=allow_overshoot)
         # Highest CBH rung
         self.highest_cbh = max(self.cbh_pdts.keys())
 
 
-    def build_scheme(self, saturate=1):
+    def build_scheme(self, saturate=1, allow_overshoot=False) -> tuple:
         """
         Build CBH scheme and store the SMILES strings in dictionaries for each CBH 
         level.
 
         ARGUMENTS
         ---------
-        :saturate:  [int or str] (default=1 or 'H') The integer or string 
-        representation of the default molecule that will saturate the heavy atoms. 
-        Usually 'H' (1), but is also often 'F' (9) or 'Cl' (17).
+        :saturate:          [int or str] (default=1 or 'H') 
+                                The integer or string representation of the default 
+                                molecule that will saturate the heavy atoms. 
+                Ex)'H' (1), but is also often 'F' (9) or 'Cl' (17).
+
+        :allow_overshoot:   [bool] (default=False)
+                                Choose to allow a precursor to have a substructure 
+                                of the target species, as long as the explicit 
+                                target species does not show up on the product 
+                                side. 
+                Ex) if species='CC(F)(F)F' and saturate=9, the highest CBH rung 
+                    would be: 
+                    False - CBH-0-F
+                    True - CBH-1-F (even though C2F6 is generated as a precursor)
 
         RETURNS
         -------
-        (cbh_pdts, cbh_rcts)
+        (cbh_pdts, cbh_rcts) [tuple]
 
-        :cbh_pdts:  [nested dict] The product side of each CBH level 
+            cbh_pdts    [nested dict] The product side of each CBH level 
                                 {cbh_level: {residual SMILES : num occurences}}
-        :cbh_rcts:  [nested dict] The reactant side of each CBH level 
+            cbh_rcts    [nested dict] The reactant side of each CBH level 
                                 {cbh_level: {residual SMILES : num occurences}}
         """
 
@@ -116,7 +141,7 @@ class buildCBH:
         atom_symbols.remove('H')
         atom_symbols.remove('O')
         atom_symbols.remove('F')
-        CBH_0_F_cond = True not in [True for a in atom_symbols if a in self.smile_h]
+        CBH_0_F_cond = True not in [True for a in atom_symbols if a in self.smiles_h]
         
         cbh_pdts = {} # CBH level products
         cbh_rcts = {} # CBH level reactants
@@ -145,7 +170,8 @@ class buildCBH:
                 terminal_idx += [atom.GetIdx()]
 
         cbh_level = 0 # init
-        
+        trigger = False # trigger to break loop and end generation of next rung
+
         while True: # As long as the original molecule is not recreated in CBH levels
             # 1. CBH products
             new_branches = [] # initialize branching
@@ -172,11 +198,19 @@ class buildCBH:
                 else:
                     terminals = []
             
-            # End loop if the target molecules shows up on the product side
-            # The substructure search removes the possibilty of "overshooting" or "circularity" 
             # (i.e., C2F6 in product side for CH3CF3)
-            if True in [Chem.MolFromSmiles(r).HasSubstructMatch(self.mol) for r in set(residuals+terminals)]:
-                if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self.smile_h and self.ignore_F2:
+            if allow_overshoot:
+                # End loop if the target molecules shows up on the product side, allowing overshooting
+                if self.smiles in set(residuals+terminals):
+                    trigger = True
+            else:
+                # End loop if the target molecules shows up on the product side
+                # The substructure search removes the possibilty of "overshooting" or "circularity" 
+                if True in [Chem.MolFromSmiles(r).HasSubstructMatch(self.mol) for r in set(residuals+terminals)]:
+                    trigger = True
+
+            if trigger:
+                if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self.smiles_h and self.ignore_F2:
                     # if saturation is fluorine and the only elements present are C H O or F
                     cbh_pdts[0], cbh_rcts[0] = self.CBH_0_F()
                 del cbh_rcts[cbh_level]
@@ -191,17 +225,17 @@ class buildCBH:
             # 2. CBH reactants
             if cbh_level == 0:
                 # Get number of H in product (bakes in stoichiometry)
-                pdt_H = sum([cbh_pdts[0][smile]*Chem.MolFromSmiles(smile).GetAtomWithIdx(0).GetTotalNumHs() \
-                    for smile in cbh_pdts[0].keys()])
+                pdt_H = sum([cbh_pdts[0][smiles]*Chem.MolFromSmiles(smiles).GetAtomWithIdx(0).GetTotalNumHs() \
+                    for smiles in cbh_pdts[0].keys()])
                 # Get number of H in target molecule
                 rct_H = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
                 cbh_rcts[0] = {'[H][H]':(pdt_H - rct_H)/2}
                 
                 # Count number of saturation atoms to balance
                 if saturate != 1:
-                    pdt_F = sum([cbh_pdts[0][smile]*smile.count(saturate_sym) for smile in cbh_pdts[0].keys()])
-                    rct_F = sum([cbh_rcts[0][smile]*smile.count(saturate_sym) for smile in cbh_rcts[0].keys()])
-                    rct_F += self.smile.count(saturate_sym)
+                    pdt_F = sum([cbh_pdts[0][smiles]*smiles.count(saturate_sym) for smiles in cbh_pdts[0].keys()])
+                    rct_F = sum([cbh_rcts[0][smiles]*smiles.count(saturate_sym) for smiles in cbh_rcts[0].keys()])
+                    rct_F += self.smiles.count(saturate_sym)
                     cbh_rcts[0][f'{saturate_sym}{saturate_sym}'] = (pdt_F - rct_F)/2
             else:
                 # Get the previous products + branch
@@ -231,7 +265,7 @@ class buildCBH:
         return cbh_pdts, cbh_rcts
 
 
-    def atom_centric(self, dist, return_smile=False, atom_indices=[], saturate=1) -> list:
+    def atom_centric(self, dist:int, return_smile=False, atom_indices=[], saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species 
         produced by atom-centric CBH steps.
@@ -281,7 +315,7 @@ class buildCBH:
         return residuals
 
 
-    def bond_centric(self, dist, return_smile=False, saturate=1) -> list:
+    def bond_centric(self, dist:int, return_smile=False, saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species 
         produced by bond-centric CBH steps.
@@ -355,7 +389,7 @@ class buildCBH:
         """
         
         atoms = ['C','O','F','H']
-        coeffs = {a:self.smile_h.count(a) for a in atoms}
+        coeffs = {a:self.smiles_h.count(a) for a in atoms}
         
         coeff_ch4 = coeffs['C'] - 1/4*coeffs['F']
         coeff_h2o = coeffs['O']
@@ -369,7 +403,7 @@ class buildCBH:
 
 
     @staticmethod
-    def count_repeats(ls) -> dict:
+    def count_repeats(ls:list) -> dict:
         """
         Count the number of repeated molecules in a given list.
 
@@ -386,15 +420,19 @@ class buildCBH:
 
 
     @staticmethod
-    def replace_atoms(mol, dictionary, target, change):
+    def replace_atoms(mol, dictionary:dict, target:int, change:int):
         """
         Replace the 'target' atom with a 'change' atom.
 
+        ARGUMENTS
+        ---------
         :dictionary: [dict] {atom idx : implicit valence}
-        :target:     [int]
-        :change:     [int]
+        :target:     [int] Element number of the atom to replace
+        :change:     [int] Element number of the atom to replace with
 
-        :new_mol:   [RDkit Mol]
+        RETURNS
+        -------
+        :new_mol:   [RDkit Mol] Mol with replaced atoms
         """
         
         new_mol = Chem.RWMol(Chem.AddHs(mol))
@@ -413,15 +451,15 @@ class buildCBH:
         return new_mol
 
     
-    def visualize(self, cbh_rung=[]):
+    def visualize(self, cbh_rung:int=[]):
         """
         Visualize the CBH scheme in a jupyter notebook. Can show all or specific 
         CBH rungs.
 
         ARGUMENTS
         ---------
-        :cbh_rung:  [int] CBH rung to display (default = [] --> all rungs) A value 
-                        of '-1' can be used to get the highest rung.
+        :cbh_rung:  [int] (default = [] --> all rungs) CBH rung to display. 
+                        A value of '-1' can be used to get the highest rung.
 
         RETURNS
         -------
@@ -436,7 +474,7 @@ class buildCBH:
             try:
                 cbh_levels = [cbh_levels[cbh_rung]]
             except IndexError:
-                print(f'CBH rung {cbh_rung} does not exist for {self.smile}.\nThe highest CBH rung for this species is: {max(cbh_levels)}')
+                print(f'CBH rung {cbh_rung} does not exist for {self.smiles}.\nThe highest CBH rung for this species is: {max(cbh_levels)}')
                 return
 
         # cycle through each CBH rung
@@ -450,11 +488,11 @@ class buildCBH:
             for key in self.cbh_rcts[cbh_level]:
                 rct = rct + '.' + key
             rct = rct[1:]
-            # rxn = self.smile+'.'+rct+'>>'+pdt
+            # rxn = self.smiles+'.'+rct+'>>'+pdt
             self.__visualize(cbh_level)
             
 
-    def __visualize(self, cbh_level):
+    def __visualize(self, cbh_level:int):
         """
         Helper function that actually creates the images to visualize. 
         Designed for Jupyter Notebook.
@@ -475,7 +513,7 @@ class buildCBH:
         max_num_mols = max([len(v) for v in self.cbh_pdts.values()]+[len(v) for v in self.cbh_rcts.values()])
 
         rct_df = DataFrame(self.cbh_rcts[cbh_level].items(), columns=['smiles', 'num'])
-        target = DataFrame({self.smile:1}.items(), columns=['smiles', 'num'])
+        target = DataFrame({self.smiles:1}.items(), columns=['smiles', 'num'])
         rct_df = concat([target, rct_df[:]]).reset_index(drop = True)
         PandasTools.AddMoleculeColumnToFrame(rct_df, smilesCol='smiles')
         pdt_df = DataFrame(self.cbh_pdts[cbh_level].items(), columns=['smiles', 'num'])
@@ -560,15 +598,14 @@ def graph2mol(graph, return_smile=False):
     return mol
 
 
-def add_dicts(dict1, dict2) -> dict:
+def add_dicts(*dictionaries: dict) -> dict:
     """
     Add the values within a dictionary together for matching keys.
     All dictionaries have the form: {residual SMILES : num occurences}}
 
     ARGUMENTS
     ---------
-    :dict1: [dict] the first dictionary
-    :dict2: [dict] the second dictionary 
+    :*dictionaries: [dict] dictionaries to add
 
     RETURNS
     -------
@@ -576,7 +613,7 @@ def add_dicts(dict1, dict2) -> dict:
                     SMILEs are added together
     """
     dd = defaultdict(list) # dictionary with elements of a list
-    for d in (dict1, dict2):
+    for d in [*dictionaries]:
         for key, value in d.items():
             # {key: [val1, val2]}
             dd[key].append(value)

@@ -9,7 +9,7 @@ import pandas as pd
 from numpy import nan, isnan
 
 class Molecule:
-    def __init__(self, smiles, **kwargs):
+    def __init__(self, smiles:str, **kwargs):
         """
         Want kwargs to be of form:
         {method name: {values needed to compute energy : value}}
@@ -141,9 +141,35 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
                     energies[m.smiles]['source'] = nan
             
             # Add alternative reactions to dictionary
-            if 'alternative_CBH' in m:
-                alternative_CBH[m.smiles] = m.alternative_CBH
-    
+            # TODO: might need to consider if multiple alternative CBH rungs
+            if 'alternative_CBH' in m and list(m.alternative_CBH.keys()) != []:
+                for rung in m.alternative_CBH.keys():
+                    alternative_CBH[m.smiles] = {}
+                    # make sure that the smiles in these reactions are canon
+                    for smiles in m.alternative_CBH[rung].keys():
+                        try:
+                            canon_smiles = Chem.CanonSmiles(smiles)
+                        except:
+                            print(f'ArgumentError: entered SMILES string is not valid')
+                            print(f'\tRung {rung} in file: {filename}')
+                            print('\tThis reaction will not be added to file until fixed.')
+                            break
+
+                        if smiles != canon_smiles:
+                            if canon_smiles in m.alternative_CBH[rung].keys():
+                                # triggers if equivalent smiles strings are in the alternative_CBH file
+                                print(f'Error: alterantive_CBH for rung {rung} contains multiple smiles equivalent keys.\nFile found here: {filename}')
+                                print('\tThis reaction will not be added to file until fixed.')
+                                break
+                            else:
+                                m.alternative_CBH[rung][canon_smiles] = m.alternative_CBH[smiles]
+                                del m.alternative_CBH[rung][smiles]
+                    else: # continue if inner loop didn't break
+                        alternative_CBH[m.smiles][rung] = m.alternative_CBH[rung]
+                        continue
+                    # break outer loop if inner loop broke without adding this outer reaction
+                    break
+
     energies = pd.DataFrame(energies).T
     energies.loc[:,energies.columns != 'source'] = energies.loc[:,energies.columns != 'source'].fillna(0)
     energies.to_dict()
@@ -151,7 +177,7 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
     return energies, method_keys, alternative_CBH
 
 
-def load_rankings(file: str=''):
+def load_rankings(file=''):
     """
     Load Ranking file for different levels of theory.
     Reverse the file such that it returns a dictionary of form
