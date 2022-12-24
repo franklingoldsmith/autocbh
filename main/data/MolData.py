@@ -171,7 +171,7 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
                     break
 
     energies = pd.DataFrame(energies).T
-    energies.loc[:,energies.columns != 'source'] = energies.loc[:,energies.columns != 'source'].fillna(0)
+    # energies.loc[:,energies.columns != 'source'] = energies.loc[:,energies.columns != 'source'].fillna(0)
     energies.to_dict()
 
     return energies, method_keys, alternative_CBH

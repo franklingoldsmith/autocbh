@@ -620,9 +620,12 @@ def add_dicts(*dictionaries: dict) -> dict:
     # add up the values for each key
     out_dict = {key:sum(dd[key]) for key in dd.keys()}
     # remove items where values = 0
+    del_list = []
     for k, v in out_dict.items():
         if v == 0:
-            del out_dict[k]
+            del_list.append(k)
+    for k in del_list:
+        del out_dict[k]
     return out_dict
 
 
