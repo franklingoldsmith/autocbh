@@ -1,6 +1,5 @@
 from rdkit import Chem
 from numpy import NaN
-from easydict import EasyDict
 import yaml
 import os
 import sys
@@ -33,18 +32,20 @@ class Molecule:
         return
 
         
-def read_data(file: str):
+def read_data(file: str, check_alternative_rxn=True):
     """
     Reads a yaml file containing data for a molecule.
     Data should be structured:
     - mol: RDKit Mol
     - smiles: SMILES str
     - alias: List(str)
-    - alternative_CBH: dict - {CBH rung : {smiles : coeff}}
+    - alternative_rxn: dict - {CBH rung : {smiles : coeff}}
+    - heat_of_formation: 
+        - HoF_theory : value
     - theory: 
         - method1:
-            - energies: dict - {key : value}
-            - heat_of_formation: float
+            - method_key1 : energy
+            - method_key2 : energy
         - method2
         .
         .
@@ -52,7 +53,10 @@ def read_data(file: str):
     
     ARGUMENTS
     ---------
-    :file:      [str] file path to yaml file
+    :file:                      [str] file path to yaml file
+    :check_alternative_rxn:     [bool] (default=True) Rigorous
+                                check for correct SMILES in provided
+                                alternative_rxn
 
     RETURNS
     -------
@@ -71,17 +75,54 @@ def read_data(file: str):
         raise KeyError('The molecule datafile must contain a SMILES string with key "smiles".')
 
     # Ensure canon SMILES are used for alternative CBH scheme equations
-    if 'alternative_CBH' in molecule.keys():
-        for rung, a_cbh in molecule['alternative_CBH'].items():
-            if type(rung) == int:
-                for species in a_cbh.keys():
-                    assert(type(species)==str)
-                    # seems slow
-                    if Chem.CanonSmiles(species) != species:
-                        # rename user-entered SMILES to canon SMILES
-                        a_cbh[Chem.CanonSmiles(species)] = a_cbh[species]
-                        del a_cbh[species]
-    
+    if check_alternative_rxn:
+        record_bad_rungs = []
+        new_alt_rxn_dict = {}
+        if 'alternative_rxn' in molecule:
+            for rung, a_cbh in molecule['alternative_rxn'].items():
+                new_alt_rxn_dict[rung] = {}
+                if type(rung) == int or type(rung) == float:
+                    for smiles, coeff in a_cbh.items():
+                        assert(type(smiles)==str)
+                        try:
+                            canon_smiles = Chem.CanonSmiles(smiles)
+                        except:
+                            print(f'ParseError: entered SMILES string is not valid')
+                            print(f'\tRung {rung} in file: {file}')
+                            print('\tThis reaction will not be added to file until fixed.')
+                            record_bad_rungs.append(rung)
+                            break
+                        
+                        if canon_smiles in new_alt_rxn_dict[rung]:
+                            # triggers if equivalent smiles strings are in the alternative_rxn file
+                            print(f'Error: alterantive_CBH for rung {rung} contains multiple smiles equivalent keys.\n\tFile found here: {file}')
+                            print('\tThis reaction will not be added to file until fixed.')
+                            record_bad_rungs.append(rung)
+                            break
+                        else:
+                            new_alt_rxn_dict[rung][Chem.CanonSmiles(canon_smiles)] = coeff
+
+                    else: # continue if inner loop didn't break
+                        continue
+                    # break if inner loop broke
+                    break
+
+                # if rung is not int or float
+                else:
+                    print(f'ArgumentError: entered "rung" number must be of type int or float. \n\tInstead got: {rung, type(rung)}.')
+                    print(f'\tThis reaction will not be added to molecule until fixed.')
+                    record_bad_rungs.append(rung)
+                    break
+
+            else: # if inner loop didn't break, add alterantive rxn
+                molecule['alternative_rxn'][rung] = new_alt_rxn_dict[rung]
+            
+            for rung in record_bad_rungs:
+                del molecule['alternative_rxn'][rung]
+            if not molecule['alternative_rxn']: # if empty
+                del molecule['alternative_rxn']
+
+        
     return molecule
 
 
@@ -101,13 +142,12 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
     :method_keys:     [dict] holds the keys necessary to compute the single point 
                         energy for each method
                         {method : [necessary keys fo calculation]}
-    :alternative_CBH: [dict] holds any alternative reactions for a given species
+    :alternative_rxn: [dict] holds any alternative reactions for a given species
                         to possibly override the one derived from the CBH scheme. 
                         {target_smiles : {CBH_rung : {precursor_smiles : coeff}}}
     """
     energies = {}           # {smiles : {energy_type : value}}
     method_keys = {}        # {method : [necessary keys for calculation]}
-    alternative_CBH = {}    # {target smiles : {CBH_rung : {precursor smiles : coeff}}}
 
     # load rankings
     with open(ranking_path, 'r') as f:
@@ -116,65 +156,68 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
     for filename in os.listdir(folder_path):
         f = os.path.join(folder_path, filename)
         if os.path.isfile(f):
-            m = EasyDict(read_data(f))
+            m = read_data(f, check_alternative_rxn=False)
 
             rank = nan
-            energies[m.smiles] = {}
-            for method in m.theory.keys():
+            energies[m['smiles']] = {}
+
+            for method in m['theory']:
                 # merge dicts to get expected structure
-                if 'energies' in m.theory[method]:
-                    energies[m.smiles] = {**energies[m.smiles], **m.theory[method].energies}
-                    if method not in method_keys.keys():
-                        # does not take into account any typos or accidentally added keys
-                        method_keys[method] = [] # initialize
-                    method_keys[method].extend(list(m.theory[method].energies))
-                    method_keys[method] = list(set(method_keys[method]))
-                
-                hof_cond = 'heat_of_formation' in m.theory[method]
-                if (isnan(rank) and hof_cond) or (not isnan(rank) and rankings[method] < rank and hof_cond):
-                    energies[m.smiles]['DfH'] = m.theory[method].heat_of_formation
-                    energies[m.smiles]['source'] = method
-                    rank = rankings[method]
-
-                if isnan(rank):
-                    energies[m.smiles]['DfH'] = 0.
-                    energies[m.smiles]['source'] = nan
+                energies[m['smiles']] = {**energies[m['smiles']], **m['theory'][method]}
+                if method not in method_keys:
+                    # does not take into account any typos or accidentally added keys
+                    method_keys[method] = []
+                method_keys[method].extend(list(m['theory'][method]))
+                method_keys[method] = list(set(method_keys[method]))
             
-            # Add alternative reactions to dictionary
-            # TODO: might need to consider if multiple alternative CBH rungs
-            if 'alternative_CBH' in m and list(m.alternative_CBH.keys()) != []:
-                for rung in m.alternative_CBH.keys():
-                    alternative_CBH[m.smiles] = {}
-                    # make sure that the smiles in these reactions are canon
-                    for smiles in m.alternative_CBH[rung].keys():
-                        try:
-                            canon_smiles = Chem.CanonSmiles(smiles)
-                        except:
-                            print(f'ArgumentError: entered SMILES string is not valid')
-                            print(f'\tRung {rung} in file: {filename}')
-                            print('\tThis reaction will not be added to file until fixed.')
-                            break
-
-                        if smiles != canon_smiles:
-                            if canon_smiles in m.alternative_CBH[rung].keys():
-                                # triggers if equivalent smiles strings are in the alternative_CBH file
-                                print(f'Error: alterantive_CBH for rung {rung} contains multiple smiles equivalent keys.\nFile found here: {filename}')
-                                print('\tThis reaction will not be added to file until fixed.')
-                                break
-                            else:
-                                m.alternative_CBH[rung][canon_smiles] = m.alternative_CBH[smiles]
-                                del m.alternative_CBH[rung][smiles]
-                    else: # continue if inner loop didn't break
-                        alternative_CBH[m.smiles][rung] = m.alternative_CBH[rung]
-                        continue
-                    # break outer loop if inner loop broke without adding this outer reaction
-                    break
+            if 'heat_of_formation' in m:
+                for method in m['heat_of_formation']:
+                    lvl_theory = method.split('//')[1].split('+')[0] if 'CBH' in method else method
+                    if isnan(rank) or (not isnan(rank) and rankings[lvl_theory] < rank):
+                        energies[m['smiles']]['DfH'] = m['heat_of_formation'][method]
+                        energies[m['smiles']]['source'] = method
+                        rank = rankings[method]
+            if isnan(rank):
+                energies[m['smiles']]['DfH'] = 0.
+                energies[m['smiles']]['source'] = nan
 
     energies = pd.DataFrame(energies).T
-    # energies.loc[:,energies.columns != 'source'] = energies.loc[:,energies.columns != 'source'].fillna(0)
+    energies[['DrxnH']] = 0
+    max_C = max([i.count('C') for i in energies.index])
+    energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
     energies.to_dict()
 
-    return energies, method_keys, alternative_CBH
+    return energies, method_keys
+
+
+def generate_alternative_rxn_file(folder_path:str, save_file:str=None):
+    """
+    Generates a YAML file containing alternative reactions.
+    Structured:
+
+    Target SMILES:
+        - CBH rank [int/float]
+            - precursor1 SMILES : coeff (negative for reactant, positive for product)
+            - precursor2 SMILES : coeff
+            .
+            .
+            .
+
+    """
+
+    alternative_rxn = {}    # {target smiles : {CBH_rung : {precursor smiles : coeff}}}
+    for filename in os.listdir(folder_path):
+        f = os.path.join(folder_path, filename)
+        if os.path.isfile(f):
+            m = read_data(f, check_alternative_rxn=True)
+            if 'alternative_rxn' in m:
+                alternative_rxn[m['smiles']] = m['alternative_rxn']
+    
+    if save_file:
+        with open('./data/'+save_file+'.yaml','w') as f:
+            yaml.dump(alternative_rxn, f, default_flow_style=False)
+    
+    return alternative_rxn
 
 
 def load_rankings(file=''):
@@ -221,14 +264,14 @@ def generate_alias_file(folder_path: str):
     for filename in os.listdir(folder_path):
         f = os.path.join(folder_path, filename)
         if os.path.isfile(f):
-            m = EasyDict(read_data(f))
+            m = read_data(f)
 
             if 'alias' in m:
-                if type(m.alias) == str:
-                    aliases[m.alias] = m.smiles
-                elif type(m.alias) == list and len(m.alias) > 0:
-                    for a in m.alias:
-                        aliases[a] = m.smiles
+                if type(m['alias']) == str:
+                    aliases[m['alias']] = m['smiles']
+                elif type(m['alias']) == list and len(m['alias']) > 0:
+                    for a in m['alias']:
+                        aliases[a] = m['smiles']
                 
     # TODO: save to a file
     with open('alias.yaml', 'w') as f:

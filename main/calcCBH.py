@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from numpy import nan, isnan
 from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs, CanonSmiles, GetPeriodicTable
-from data.molData import load_rankings, generate_database
+from data.molData import load_rankings, generate_database, generate_alternative_rxn_file
 from hrxnMethods import anl0_hrxn, sum_Hrxn
 import os
 import yaml
@@ -40,7 +40,7 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, methods: list=[], force_generate_database=False):
+    def __init__(self, methods: list=[], force_generate_database=False, force_generate_alternative_rxn=False):
         """
         ARGUMENTS
         ---------
@@ -59,7 +59,7 @@ class calcCBH:
             # use all available methods in methods_keys dictionary
             self.methods = list(self.methods_keys_dict.keys())
             self.methods_keys = []
-            for m in self.methods_keys_dict.keys():
+            for m in self.methods_keys_dict:
                 self.methods_keys.extend(self.methods_keys_dict[m])
                 self.methods_keys = list(set(self.methods_keys))
         else:
@@ -96,32 +96,39 @@ class calcCBH:
         for k,l in self.rankings.items():
             for v in l:
                 self.rankings_rev[v] = k
-
-        # with open('data/alternative_CBH.yaml', 'r') as f:
-        #     self.alternative_CBH = yaml.safe_load(f)
-        # TODO:
-        # 0. generate this file
+        
+        # TODO: Alternative rxns
         # 1. check whether species exist
         # 2. if precurors don't exist, error message and delete reaction
         # 3. if exists then make it take priority over other possible reactions
         # 4. still compute other cbh rungs, and say in error messages that there are potential other reactions that are better
         #   - if better rung
         #   - if number of total species in reaction is less in another rung
+        # I want options
+        #   - force use alternative_rxn no matter what
+        #   - let software decide (based on better rung (or less reactants?) if same then weight)
         
-        # TODO: create energies DataFrame using only self.method_keys
+        self.energies = pd.DataFrame(generate_database('data/molecule_data')[0])[self.methods_keys+['source', 'DfH', 'DrxnH']]
 
+        if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn:
+            generate_alternative_rxn_file('data/molecule_data', 'alternative_rxn')
 
+        with open('data/alternative_rxn.yaml', 'r') as f:
+            self.alternative_rxn = yaml.safe_load(f)
 
         ##### CURRENT DATA LOADER #####
-        constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
-        # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
-        # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
-        self.energies = pd.read_pickle('./data/energies_Franklin_nan.pkl')
-        # self.energies = generate_database('data/molecule_data/')[0] # something is different
+        ###
+        # constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
+        # # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
+        # # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
+        # self.energies = pd.read_pickle('./data/energies_Franklin_nan.pkl')
+        # # self.energies = generate_database('data/molecule_data/')[0] # something is different
 
-        self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
-        # sort by num C then by SMILES length
-        self.energies.sort_index(key=lambda x: x.str.count('C')*max(x.str.count('C'))+x.str.len(),inplace=True)
+        # self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
+        # # sort by num C then by SMILES length
+        # max_C = max([i.count('C') for i in self.energies.index])
+        # self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
+        ###
         # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
         # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
         # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
@@ -131,7 +138,7 @@ class calcCBH:
 
         # self.Hrxn = self.calc_Hrxn()
         
-    def generate_CBHs(self, species_list: list, saturate: int=1) -> list:
+    def generate_CBH_coeffs(self, species_list: list, saturate: int=1) -> list:
         """
         Generate a list of Pandas DataFrame objects that hold the coefficients 
         for every precursor created for CBH schemes of each target species.
@@ -192,7 +199,7 @@ class calcCBH:
         return dfs
 
 
-    def calc_Hf(self, saturate:list=[1,9]):
+    def calc_Hf(self, saturate:list=[1,9], max_rung:int=None):
         """
         Calculate the heats of formation of species that do not have reference 
         values using the highest possible CBH scheme with the best possible level 
@@ -205,6 +212,7 @@ class calcCBH:
                             atomic numbers of the elements to saturate precursor 
                             species. String representations of the elements 
                             also works. (default=[1,9] for hydrogen and fluorine)
+        :max_rung:      [int] (default=None) Max CBH rung allowed for Hf calculation
 
         RETURN
         ------
@@ -237,6 +245,7 @@ class calcCBH:
         simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
         # sorted list of molecules that don't have any reference values
         sorted_species = sorted(self.energies[self.energies['source'].isna()].index.values, key=simple_sort)
+        # print(sorted_species)
 
         # cycle through sorted molecules
         for s in sorted_species:
@@ -245,7 +254,11 @@ class calcCBH:
             self.error_messages[s] = []
             for i, sat in enumerate(saturate_nums):
                 cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
-                cbhs_rungs.append(self.check_rung_usability(s, cbhs[-1].highest_cbh, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i], sat))
+                if max_rung is not None:
+                    rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
+                else:
+                    rung = cbhs[-1].highest_cbh
+                cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
 
             if len(self.error_messages[s]) == 0:
                 del self.error_messages[s]
@@ -379,7 +392,6 @@ class calcCBH:
         
         # Hf
         Hf = {k:v - Hrxn['ref'] for k,v in Hrxn.items()}
-        # print(s, Hf)
 
         return Hrxn, Hf
 
@@ -553,7 +565,7 @@ class calcCBH:
         return weights
 
     
-    def check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str, saturate:int=1): 
+    def check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str): 
         """
         Method that checks a given CBH rung's usability by looking for missing 
         reactants or whether all precursors were derived using CBH schemes of 
@@ -562,8 +574,12 @@ class calcCBH:
         calcCBH.error_messages attribute which can be displayed with the 
         calcCBH.print_errors() method. 
 
-        ??? Still need to check if there are homogeneous level of theory 
-        values in database for the calculation ???
+        If all species in a CBH rung (including the target) have heats of formation
+        derived using CBH and with homogeneous levels of theory, rung equivalency 
+        will be checked after decomposing the reaction such that all precursors are 
+        derived using "reference" levels of theory. "Reference" refers to a theory
+        that is of better rank than the best possible theory for the target species, 
+        s.
 
         ARGUMENTS
         ---------
@@ -646,16 +662,8 @@ class calcCBH:
                 new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s and len(s.split('//'))>1 else s for s in sources]
                 source_rank = list([self.rankings_rev[source] for source in new_sources])
             else: # if a species Hf hasn't been computed yet, its source will be type==float, so move down a rung
+                # This will appropriately trigger for overshooting cases
                 test_rung -= 1
-
-                ## THIS WILL ALSO TRIGGER (appropriately) FOR CASES OF OVERSHOOTING
-                # err_precur = list(compress(all_precursors, [type(s)!=str for s in sources]))
-                # missing_precursors = ''
-                # for precursors in err_precur:
-                #     missing_precursors += '\n\t   '+precursors
-                # self.error_messages[s].append(f"CBH-{test_rung+1}-{label} reactant(s) do not have appropriately logged sources for: {missing_precursors}")
-                # if test_rung >=0:
-                #     self.error_messages[s][-1] += f'\n\tRung will move down to CBH-{test_rung}-{label}.'
                 continue
             
             # reaction dictionary
@@ -681,9 +689,6 @@ class calcCBH:
                     #       In this case, might make sense to find worst rank in both cases, and choose the better one
                     #       If it's a tie, then go with the current saturation strategy
                     #           Or actually, maybe we should go with the current saturation all the time if it's an avg containing the saturation atom
-                    # Once fully decomposed, test whether final solution is equivalent to any of its CBH rungs
-                    #   if not, perhaps leave an error message saying equivalent equation, but return the test_rung anyways
-                    #   if equivalent, return the lower CBH rung
                     # Need to think about whether I also need to decompose lower CBH rungs
                     #   I don't think I need to since if a higher rung is good, then it's the best option (unless # of reactants is < at lower rungs...)
                     #       Could try decomposing lower rungs, too if this is triggered, compare recorded number of reactants to that of lower rungs. 
