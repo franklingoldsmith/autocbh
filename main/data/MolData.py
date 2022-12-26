@@ -7,6 +7,8 @@ sys.path.append('.')
 import pandas as pd
 from numpy import nan, isnan
 
+pd.set_option('display.float_format', '{:.6f}'.format)
+
 class Molecule:
     def __init__(self, smiles:str, **kwargs):
         """
@@ -42,6 +44,8 @@ def read_data(file: str, check_alternative_rxn=True):
     - alternative_rxn: dict - {CBH rung : {smiles : coeff}}
     - heat_of_formation: 
         - HoF_theory : value
+    - heat_of_reaction:
+        -HoF_theory: value
     - theory: 
         - method1:
             - method_key1 : energy
@@ -176,13 +180,19 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
                     if isnan(rank) or (not isnan(rank) and rankings[lvl_theory] < rank):
                         energies[m['smiles']]['DfH'] = m['heat_of_formation'][method]
                         energies[m['smiles']]['source'] = method
-                        rank = rankings[method]
+                        rank = rankings[lvl_theory] if 'CBH' in method else rankings[method]
+
+            if 'heat_of_reaction' in m and 'heat_of_formation' in m:
+                    energies[m['smiles']]['DrxnH'] = m['heat_of_reaction'][method]
+            else:
+                energies[m['smiles']]['DrxnH'] = 0
+
             if isnan(rank):
                 energies[m['smiles']]['DfH'] = 0.
                 energies[m['smiles']]['source'] = nan
 
     energies = pd.DataFrame(energies).T
-    energies[['DrxnH']] = 0
+    # energies[['DrxnH']] = 0
     max_C = max([i.count('C') for i in energies.index])
     energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
     energies.to_dict()

@@ -10,6 +10,10 @@ import os
 import yaml
 from itertools import compress
 
+# error
+from traceback import format_tb
+from errors import KeyErrorMessage
+
 
 class calcCBH:
     """
@@ -40,13 +44,26 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, methods: list=[], force_generate_database=False, force_generate_alternative_rxn=False):
+    def __init__(self, methods: list=[], force_generate_database:bool=False, force_generate_alternative_rxn:bool=False, dataframe_path:str=None):
         """
         ARGUMENTS
         ---------
         :methods:       [list] List of method names to use for calculation
                             of HoF. If empty, use all available methods.
                             (default=[])
+
+        :force_generate_database:           [bool] (default=False)
+                        Force the generation of the self.energies dataframe
+                        from the folder containing individual species data
+                        in yaml files.
+
+        :force_generate_alternative_rxn:    [bool] (default=False) 
+                        Force the generation of an alternative reaction
+                        YAML file. Otherwise, use the existing one.
+        
+        :dataframe_path:                    [str] (default=None)
+                        Load the self.energies dataframe from the pickle file
+                        containing a previously saved self.energies dataframe.
         """
 
         # Load the methods to use
@@ -108,31 +125,33 @@ class calcCBH:
         #   - force use alternative_rxn no matter what
         #   - let software decide (based on better rung (or less reactants?) if same then weight)
         
-        self.energies = pd.DataFrame(generate_database('data/molecule_data')[0])[self.methods_keys+['source', 'DfH', 'DrxnH']]
+        if force_generate_database:
+            self.energies = pd.DataFrame(generate_database('data/molecule_data')[0])[self.methods_keys+['source', 'DfH', 'DrxnH']]
+        else:
+            if dataframe_path:
+                self.energies = pd.read_pickle(dataframe_path)
+            else:
+                constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
+                # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
+                # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
+                self.energies = pd.read_pickle('./data/energies_Franklin_nan.pkl')
+                # self.energies = generate_database('data/molecule_data/')[0] # something is different
+
+                self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
+                # sort by num C then by SMILES length
+                max_C = max([i.count('C') for i in self.energies.index])
+                self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
+                ###
+                # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
+                # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
+                # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
+                # 'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo']] = nan
 
         if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn:
             generate_alternative_rxn_file('data/molecule_data', 'alternative_rxn')
 
         with open('data/alternative_rxn.yaml', 'r') as f:
             self.alternative_rxn = yaml.safe_load(f)
-
-        ##### CURRENT DATA LOADER #####
-        ###
-        # constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
-        # # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
-        # # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
-        # self.energies = pd.read_pickle('./data/energies_Franklin_nan.pkl')
-        # # self.energies = generate_database('data/molecule_data/')[0] # something is different
-
-        # self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
-        # # sort by num C then by SMILES length
-        # max_C = max([i.count('C') for i in self.energies.index])
-        # self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
-        ###
-        # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
-        # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
-        # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
-        # 'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo']] = nan
         
         self.error_messages = {}
 
@@ -245,7 +264,6 @@ class calcCBH:
         simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
         # sorted list of molecules that don't have any reference values
         sorted_species = sorted(self.energies[self.energies['source'].isna()].index.values, key=simple_sort)
-        # print(sorted_species)
 
         # cycle through sorted molecules
         for s in sorted_species:
@@ -357,7 +375,7 @@ class calcCBH:
         
         # TODO: Fix this since it will break the caclulation and user can't control order
         for precursor in rxn[s]:
-            if self.energies.loc[precursor,'source'] ==  'NaN':
+            if self.energies.loc[precursor,'source'] ==  'NaN': # should be .loc[].isnan()
                 print(f'Must restart with this molecule first: {precursor}')
                 return 
         
@@ -384,9 +402,8 @@ class calcCBH:
             if rank == 0 or rank == 1:
                 continue
             for m in m_list:
-                if m == 'anl0':
-                    if 0 not in self.energies.loc[rxn[s].keys(), ['avqz', 'av5z', 'zpe']].values:
-                        Hrxn['anl0'] = anl0_hrxn(delE)
+                if m == 'anl0' and 0 not in self.energies.loc[rxn[s].keys(), ['avqz', 'av5z', 'zpe']].values:
+                    Hrxn['anl0'] = anl0_hrxn(delE)
                 elif 0 not in self.energies.loc[rxn[s].keys(), self.methods_keys_dict[m]].values:
                     Hrxn[m] = sum_Hrxn(delE, *self.methods_keys_dict[m])
         
@@ -830,6 +847,107 @@ class calcCBH:
                 print('\n')
         else:
             print('No errors found.')
+
+    
+    def save_calculated_Hf(self, save_each_molecule_file:bool=False, save_pd_dictionary:bool=False, **kwargs):
+        """
+        THIS ACTION IS IRREVERSIBLE
+        ---------------------------
+        
+        Save calculated Hf and Hrxn to database. 
+        
+
+        ARGUMENTS
+        ---------
+        :save_each_molecule_file:   [bool]
+            Save the newly calculated heats of formation to each molecule's 
+            file in the folder given by parameter: folder_path
+
+            REQUIRES ADDITIONAL KWARG
+            :folder_path:       [str] Path to a folder that contains the files 
+                                    of each molecule
+
+        :save_pd_dictionary:        [bool]
+            Save the self.energies dataframe with updated values to 
+            a pickle file after converting to a dictionary.
+
+            REQUIRES ADDITIONAL KWARG
+            :file_path:       [str] Filepath to save self.energies DataFrame as 
+                                    a pickled dictionary. Must end in '.pkl'
+        
+        RETURNS
+        -------
+
+        """
+        for k, v in kwargs.items():
+            if not isinstance(v, str):
+                raise TypeError(f'Argument {k} must be of type str, not {type(v)}')
+
+        if save_each_molecule_file:
+            try:
+                folder_path = kwargs['folder_path']
+            except KeyError as e:
+                # err_msg = KeyErrorMessage()
+                raise KeyError('Since save_each_molecule_file was True, the user must provide a path to a folder that contains the files of each molecule.')
+
+            for filename in os.listdir(folder_path):
+                f = os.path.join(folder_path, filename)
+                if os.path.isfile(f):
+                    with open(f, 'r') as yamlfile:
+                        yamldict = yaml.safe_load(yamlfile)
+
+                        smiles = CanonSmiles(yamldict['smiles'])
+                        source = self.energies.loc[smiles, 'source']
+                        hf = self.energies.loc[smiles, 'DfH']
+                        hrxn = self.energies.loc[smiles, 'DrxnH']
+
+                        save = False
+                        # heat of formation
+                        if 'heat_of_formation' in yamldict:
+                            if source in yamldict['heat_of_formation']:
+                                
+                                if abs(yamldict['heat_of_formation'][source] - hf) > 1e-6:
+                                    # this if statement is unstable for some reason
+                                    save = True
+                                    print(f'Rewriting heat of formation for:\n\tFile path: \t{f}\n\tPrevious value: \t {yamldict["heat_of_formation"][source]} \n\tNew value: \t{hf}\n')
+                            yamldict['heat_of_formation'][source] = float(hf)
+
+                        else:
+                            save = True
+                            yamldict['heat_of_formation'] = {source : float(hf)}
+                        
+                        # heat of reaction
+                        if 'heat_of_reaction' in yamldict:
+                            if source in yamldict['heat_of_reaction']:
+                                if yamldict['heat_of_reaction'][source] != hrxn:
+                                    print(f'Rewriting heat of reaction for:\n\tFile path: \t{f}\n\tPrevious value: \t {yamldict["heat_of_reaction"][source]} \n\tNew value: \t{hrxn}\n')
+                            yamldict['heat_of_reaction'][source] = float(hrxn)
+                        else:
+                            yamldict['heat_of_reaction'] = {source : float(hrxn)}
+                        
+                        # update yaml file
+                        if save:
+                            with open(f, 'w') as yamlfile:
+                                yaml.safe_dump(yamldict, yamlfile, default_flow_style=False)
+
+        if save_pd_dictionary:
+            try:
+                file_path = kwargs['file_path']
+            except KeyError as e:
+                raise KeyError('Since save_pd_dictionary was True, the user must provide a filepath for which to save the self.energies dataframe.')
+
+            # check last 5 in str and make sure it's '.pkl', else add it
+            if file_path[-4:] != '.pkl':
+                raise NameError(f'The filepath: {file_path} must end in ".pkl"')
+
+            # create directory if directory doesn't exist.
+            folder_path = file_path.split('.pkl')[0].split('/')[:-1]
+            if not os.path.exists(os.path.join(*folder_path)):
+                os.makedirs(os.path.join(*folder_path), exist_ok=True)
+            
+            self.energies.to_pickle(file_path)
+            print(f'Saved to: {file_path}')
+
 
 
 def flatten(ls:list):
