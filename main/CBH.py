@@ -132,7 +132,7 @@ class buildCBH:
         # saturation atom parsing
         ptable = Chem.GetPeriodicTable()
         if type(saturate) == str:
-                saturate = ptable.GetAtomicNumber(saturate)
+            saturate = ptable.GetAtomicNumber(saturate)
         saturate_sym = ptable.GetElementSymbol(saturate)
 
         # all elements except for C H O and F

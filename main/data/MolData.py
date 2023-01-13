@@ -165,14 +165,26 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
             rank = nan
             energies[m['smiles']] = {}
 
-            for method in m['theory']:
-                # merge dicts to get expected structure
-                energies[m['smiles']] = {**energies[m['smiles']], **m['theory'][method]}
-                if method not in method_keys:
-                    # does not take into account any typos or accidentally added keys
-                    method_keys[method] = []
-                method_keys[method].extend(list(m['theory'][method]))
-                method_keys[method] = list(set(method_keys[method]))
+            if 'theory' in m:
+                if m['theory'] is not None:
+                    for method in m['theory']:
+                        # merge dicts to get expected structure
+                        energies[m['smiles']] = {**energies[m['smiles']], **m['theory'][method]}
+                        if method not in method_keys:
+                            # does not take into account any typos or accidentally added keys
+                            method_keys[method] = []
+                        method_keys[method].extend(list(m['theory'][method]))
+                        method_keys[method] = list(set(method_keys[method]))
+                else:
+                    print(f'File for the molecule: {m["smiles"]}, does not contain corresponding method and necessary values to the key "theory".')
+                    print('This molecule will be skipped and not added to the database.')
+                    del energies[m['smiles']]
+                    continue
+            else:
+                print(f'File for the molecule: {m["smiles"]}, does not contain the key "theory" with corresponding method and necessary values.')
+                print('This molecule will be skipped and not added to the database.')
+                del energies[m['smiles']]
+                continue
             
             if 'heat_of_formation' in m:
                 for method in m['heat_of_formation']:

@@ -3,7 +3,7 @@ from CBH import add_dicts
 import numpy as np
 import pandas as pd
 from numpy import nan, isnan
-from rdkit.Chem import MolFromSmiles, MolToSmiles, AddHs, CanonSmiles, GetPeriodicTable
+from rdkit.Chem import MolFromSmiles, AddHs, CanonSmiles, GetPeriodicTable
 from data.molData import load_rankings, generate_database, generate_alternative_rxn_file
 from hrxnMethods import anl0_hrxn, sum_Hrxn
 import os
@@ -11,7 +11,6 @@ import yaml
 from itertools import compress
 
 # error
-from traceback import format_tb
 from errors import KeyErrorMessage
 
 
@@ -114,17 +113,7 @@ class calcCBH:
             for v in l:
                 self.rankings_rev[v] = k
         
-        # TODO: Alternative rxns
-        # 1. check whether species exist
-        # 2. if precurors don't exist, error message and delete reaction
-        # 3. if exists then make it take priority over other possible reactions
-        # 4. still compute other cbh rungs, and say in error messages that there are potential other reactions that are better
-        #   - if better rung
-        #   - if number of total species in reaction is less in another rung
-        # I want options
-        #   - force use alternative_rxn no matter what
-        #   - let software decide (based on better rung (or less reactants?) if same then weight)
-        
+        # Generate Database
         if force_generate_database:
             self.energies = pd.DataFrame(generate_database('data/molecule_data')[0])[self.methods_keys+['source', 'DfH', 'DrxnH']]
         else:
@@ -142,10 +131,22 @@ class calcCBH:
                 max_C = max([i.count('C') for i in self.energies.index])
                 self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
                 ###
+                # This stuff should go into test cases
                 # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
                 # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
                 # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
                 # 'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo']] = nan
+
+        # TODO: Alternative rxns
+        # 1. check whether species exist
+        # 2. if precurors don't exist, error message and delete reaction
+        # 3. if exists then make it take priority over other possible reactions
+        # 4. still compute other cbh rungs, and say in error messages that there are potential other reactions that are better
+        #   - if better rung
+        #   - if number of total species in reaction is less in another rung
+        # I want options
+        #   - force use alternative_rxn no matter what
+        #   - let software decide (based on better rung (or less reactants?) if same then weight)
 
         if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn:
             generate_alternative_rxn_file('data/molecule_data', 'alternative_rxn')
@@ -155,21 +156,35 @@ class calcCBH:
         
         self.error_messages = {}
 
-        # self.Hrxn = self.calc_Hrxn()
         
-    def generate_CBH_coeffs(self, species_list: list, saturate: int=1) -> list:
+    def generate_CBH_coeffs(self, species_list: list, saturate: int=1, allow_overshoot=False, include_target=True) -> list:
         """
         Generate a list of Pandas DataFrame objects that hold the coefficients 
         for every precursor created for CBH schemes of each target species.
 
         ARGUMENTS
         ---------
-        :self:          [calcCBH] object
-        :species_list:  [list] List of SMILES strings with target molecules.
-        :saturate:      [int or str] Integer representing the atomic number 
-                            of the element to saturate residual species with. 
-                            String representation of the element also works.
-                            (default=1)
+        :self:              [calcCBH] object
+
+        :species_list:      [list] List of SMILES strings with target molecules.
+
+        :saturate:          [int or str] Integer representing the atomic number 
+                                of the element to saturate residual species with. 
+                                String representation of the element also works.
+                                (default=1)
+
+        :allow_overshoot:   [bool] (default=False)
+                                Choose to allow a precursor to have a substructure 
+                                of the target species, as long as the explicit 
+                                target species does not show up on the product 
+                                side. 
+                Ex) if species='CC(F)(F)F' and saturate=9, the highest CBH rung 
+                    would be: 
+                    False - CBH-0-F
+                    True - CBH-1-F (even though C2F6 is generated as a precursor)
+
+        :include_target:    [bool] (default=True) Include the target species with
+                                a coefficient of -1
 
         RETURNS
         -------
@@ -192,33 +207,33 @@ class calcCBH:
         # initialize dictionaries to hold each species' CBH scheme
         all_rcts = {} # {species: {CBH scheme reactants}}
         all_pdts = {} # {species: {CBH scheme products}}
-        all_targets = [] # list of SMILES strings representing the target molecules
+        highest_rung_per_molec = []
         for species in species_list:
-            cbh = CBH.buildCBH(species, saturate) # generate CBH scheme
+            cbh = CBH.buildCBH(species, saturate, allow_overshoot=allow_overshoot) # generate CBH scheme
             # add to dictionary / lists
-            all_rcts[cbh.smiles] = cbh.cbh_rcts
-            all_pdts[cbh.smiles] = cbh.cbh_pdts
-            all_targets.append(cbh.smiles) # add standardized SMILES string representations
+            all_rcts[species] = cbh.cbh_rcts
+            all_pdts[species] = cbh.cbh_pdts
+            highest_rung_per_molec.append(cbh.highest_cbh)
         
         # Find the highest CBH rung of all the CBH schemes
-        highest_rung_per_molec = [max(pdt.keys()) for pdt in all_pdts.values()]
         highest_rung = max(highest_rung_per_molec)
 
         dfs = [] # initialize DataFrame list
         # Cycle through each CBH rung
-        for rung in range(highest_rung):
+        for rung in range(highest_rung+1):
             df = {}
             # Cycle through each species in species_list
-            for species in all_targets:
+            for species in species_list:
                 if rung <= max(all_pdts[species].keys()):
                     df[species] = all_pdts[species][rung]
                     df[species].update((precursor, coeff * -1) for precursor,coeff in all_rcts[species][rung].items())
-                    df[species].update({species:-1})
+                    if include_target:
+                        df[species].update({species:-1})
             dfs.append(pd.DataFrame(df).fillna(0).T)
         return dfs
 
 
-    def calc_Hf(self, saturate:list=[1,9], max_rung:int=None):
+    def calc_Hf(self, saturate:list=[1,9], max_rung:int=None, alt_rxn_options:str=None):
         """
         Calculate the heats of formation of species that do not have reference 
         values using the highest possible CBH scheme with the best possible level 
@@ -231,7 +246,34 @@ class calcCBH:
                             atomic numbers of the elements to saturate precursor 
                             species. String representations of the elements 
                             also works. (default=[1,9] for hydrogen and fluorine)
+
         :max_rung:      [int] (default=None) Max CBH rung allowed for Hf calculation
+
+        :alt_rxn_options: [str] (default=None)
+                    - "ignore" (ignr)
+                        Ignore alternative reactions that may exist and only use CBH 
+                        priority system. (same result as None)
+                    
+                    - "best_alt" (best)
+                        Always use the alternative reaction for all species that have
+                        them even if better ranking CBH rungs exist. Just the best 
+                        rung.
+
+                    - "avg_alt" (avg)
+                        Average all alternative reactions of a species and does not
+                        use any default CBH rungs.
+
+                    - "priority" (prty)
+                        Include alternative reactions as possible rungs (USER DEFINED), 
+                        but it will yield to better ranking CBH rungs if they exist. 
+                        Further, they will weighted if equal rank to other reactions 
+                        or a given CBH rung.
+
+                    - "priority_precursor" (pprty)
+                        Included alternative reactions and will follow CBH priority 
+                        pipeline. However, it will prioritize the equations with the 
+                        least number of precusors in the reaction since this metric
+                        is often correlated to accuracy of the CBH equation.
 
         RETURN
         ------
@@ -239,6 +281,13 @@ class calcCBH:
                             reaction, and source.
         """
         
+        alt_rxn_options_list = ['ignore', 'best_alt','avg_alt', 'priority', 'priority_precursor']
+        if alt_rxn_options:
+            if type(alt_rxn_options)!= str:
+                raise TypeError('Arg "alt_rxn_options" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
+            elif alt_rxn_options not in alt_rxn_options_list:
+                raise NameError('The available options for arg "alt_rxn_options" are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
+
         ptable = GetPeriodicTable()
         saturate_syms = []
         saturate_nums = []
@@ -265,11 +314,62 @@ class calcCBH:
         # sorted list of molecules that don't have any reference values
         sorted_species = sorted(self.energies[self.energies['source'].isna()].index.values, key=simple_sort)
 
-        # cycle through sorted molecules
+        # cycle through molecules from smallest to largest
         for s in sorted_species:
+            self.error_messages[s] = []
+
+            if s in self.alternative_rxn and alt_rxn_options and alt_rxn_options != "ignore":
+                ##### best alternative rxn option #####
+                if alt_rxn_options == "best_alt":
+                    best_alt = max(list(self.alternative_rxn[s].keys()))
+                    alt_rxn = {}
+                    alt_rxn[s] = self.alternative_rxn[s][best_alt]
+                    alt_rxn[s][s] = -1
+
+                    # check alternative rxn precursors existance in database
+                    species = list(alt_rxn[s].keys())
+                    if set(species).issubset(self.energies.index.values):
+                        species_null = self.energies.loc[species, self.methods_keys].isna().all(axis=1)
+                        # check ∆Hf
+                        if True in self.energies.loc[species, 'source'].isna():
+                            m_species = [species[i] for i, cond in enumerate(self.energies.loc[species, 'source'].isna().values) if cond==True]
+                            missing_precursors = self._missing_precursor_str(m_species)
+                            self.error_messages[s].append(f'The following precursors did not have usable reference heats of formation for the provided alternative reaction: {missing_precursors}')
+
+                        # check QM energies
+                        elif True in species_null:
+                            missing_precursors = self._missing_precursor_str(species_null.index[species_null.values])
+                            self.error_messages[s].append(f'The following precursors did not have usable QM values for the provided alternative reaction: {missing_precursors}')
+
+                        else:
+                            label = f'alt_rxn-{best_alt}-best'
+                            Hrxn[s], Hf[s] = self.Hf(s, alt_rxn, skip_precursor_check=True)
+                            final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
+                            self.energies.loc[s, 'DfH'] = final_Hf
+                            self.energies.loc[s, 'DrxnH'] = final_Hrxn
+                            self.energies.loc[s, 'source'] = label
+                            
+                            if len(self.error_messages[s]) == 0:
+                                del self.error_messages[s]
+                            continue
+
+                    else:
+                        m_species = [sp for sp in species if sp not in self.energies.index.values and sp != s]
+                        missing_precursors = self._missing_precursor_str(m_species)
+                        self.error_messages[s].append(f'Precursors in provided alternative reaction did not exist in database: {missing_precursors}')
+
+                ##### avg alternative rxns option #####
+                elif alt_rxn_options == "avg_alt":
+                    pass
+                ##### prioritize #####
+                elif alt_rxn_options == "priority":
+                    pass
+                ##### prioritize precursor #####
+                elif alt_rxn_options == "priority_precursor":
+                    pass
+
             cbhs = []
             cbhs_rungs = []
-            self.error_messages[s] = []
             for i, sat in enumerate(saturate_nums):
                 cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
                 if max_rung is not None:
@@ -300,13 +400,15 @@ class calcCBH:
             # compute Hrxn and Hf 
             if len(cbhs) == 1:
                 # if only one saturation
-                Hrxn[s], Hf[s] = self.Hf(s, cbhs[0], cbhs_rungs[0])
+                rxn = self.cbh_to_rxn(s, cbhs[0], cbhs_rungs[0])
+                Hrxn[s], Hf[s] = self.Hf(s, rxn, skip_precursor_check=True)
             else:
                 # otherwise weight the saturations
                 Hrxn_ls = []
                 Hf_ls = []
                 for i, cbh in enumerate(cbhs):
-                    Hrxn_s, Hf_s = self.Hf(s, cbh, cbhs_rungs[i])
+                    rxn = self.cbh_to_rxn(s, cbh, cbhs_rungs[i])
+                    Hrxn_s, Hf_s = self.Hf(s, rxn, skip_precursor_check=True)
                     Hrxn_ls.append(Hrxn_s)
                     Hf_ls.append(Hf_s)
 
@@ -335,16 +437,53 @@ class calcCBH:
         return self.energies[['DfH', 'DrxnH', 'source']]
 
 
-    def Hf(self, s: str, cbh: CBH.buildCBH, cbh_rung: int) -> tuple:
+    def cbh_to_rxn(self, s: str, cbh: CBH.buildCBH, cbh_rung: int) -> dict:
         """
-        Helper method to calculate the heat of formation (and reaction) given 
-        a species and it's cbh scheme (CBH.buildCBH object).
+        Helper method to generate a dictionary from a cbh's reactants
+        and products. This negates the reactants and adds the species
+        itself as a reactant. It uses the CBH.buildCBH object.
 
         ARGUMENTS
         ---------
         :s:         [str] SMILES string of the target species.
         :cbh:       [CBH.buildCBH obj] CBH scheme of the target species.
         :cbh_rung:  [int] CBH rung number to calculate the HoF
+
+        RETURNS
+        -------
+        :rxn:       [dict] Includes the negated reactant coefficient
+                        and product coefficients. The species, s, is in
+                        the dictionary with a negated coefficient.
+        """
+        
+        rxn = {} 
+        # add rxn of a target molecule's highest possible CBH level
+        rxn[s] = cbh.cbh_pdts[cbh_rung] # products
+        rxn[s].update((p,coeff*-1) for p,coeff in cbh.cbh_rcts[cbh_rung].items()) # negative reactants
+        rxn[s].update({s:-1}) # target species
+
+        return rxn
+
+
+    def Hf(self, s: str, rxn:dict, skip_precursor_check=False) -> tuple:
+        """
+        Calculate the heat of formation (and reaction) given a species 
+        and it's reaction dictionary. The reactants must be negated.
+
+        ARGUMENTS
+        ---------
+        :s:         [str] SMILES string of the target species.
+        
+        :rxn:       [dict] Includes the negated reactant coefficient
+                        and product coefficients. The species, s, is in
+                        the dictionary with a negated coefficient.
+
+        :skip_precursor_check:  [bool] (default=False)
+                        Whether skip the procedure to check if precursors 
+                        exist in database or if they have real values. 
+                        Suggested to skip only when the cbh_rung is 
+                        validated after check_rung_usability method is
+                        used.
 
         RETURNS
         -------
@@ -357,27 +496,20 @@ class calcCBH:
                         {'ref' : val, *method : val}
         """
 
-        hartree_to_kJpermole = 2625.499748 # (kJ/mol) / Hartree
-
-        rxn = {} 
-        # add rxn of a target molecule's highest possible CBH level
-        rxn[s] = cbh.cbh_pdts[cbh_rung] # products
-        rxn[s].update((p,coeff*-1) for p,coeff in cbh.cbh_rcts[cbh_rung].items()) # negative reactants
-        rxn[s].update({s:-1}) # target species
-
-        # check if there are any precursors that don't exist in the database
-        precursors_not_tabulated = [p for p in rxn[s] if p not in self.energies.index.values]
-        if len(precursors_not_tabulated) != 0:
-            print('Missing the following species in the database:')
-            for pnt in precursors_not_tabulated:
-                print(f'\t{pnt}')
-            return # break
-        
-        # TODO: Fix this since it will break the caclulation and user can't control order
-        for precursor in rxn[s]:
-            if self.energies.loc[precursor,'source'] ==  'NaN': # should be .loc[].isnan()
-                print(f'Must restart with this molecule first: {precursor}')
-                return 
+        if not skip_precursor_check:
+            # check if there are any precursors that don't exist in the database
+            precursors_not_tabulated = [p for p in rxn[s] if p not in self.energies.index.values]
+            if len(precursors_not_tabulated) != 0:
+                print(f'Missing the following species in the database for species: {s}:')
+                for pnt in precursors_not_tabulated:
+                    print(f'\t{pnt}')
+                return nan, nan
+            
+            # TODO: Fix this since it will break the caclulation and user can't control order
+            for precursor in rxn[s]:
+                if self.energies.loc[precursor,'source'].isna():
+                    print(f'Must restart with this molecule first: {precursor}')
+                    return nan, nan
         
         # energy columns needed for calculation
         nrg_cols = ['DfH']
@@ -402,7 +534,7 @@ class calcCBH:
             if rank == 0 or rank == 1:
                 continue
             for m in m_list:
-                if m == 'anl0' and 0 not in self.energies.loc[rxn[s].keys(), ['avqz', 'av5z', 'zpe']].values:
+                if m == 'anl0' and True not in self.energies.loc[rxn[s].keys(), ['avqz', 'av5z', 'zpe']].isna():
                     Hrxn['anl0'] = anl0_hrxn(delE)
                 elif 0 not in self.energies.loc[rxn[s].keys(), self.methods_keys_dict[m]].values:
                     Hrxn[m] = sum_Hrxn(delE, *self.methods_keys_dict[m])
@@ -413,7 +545,15 @@ class calcCBH:
         return Hrxn, Hf
 
 
-    def calc_Hf_allrungs(self, s: str, saturate: int=1) -> tuple:
+    def calc_Hf_alt_rxn(self, alt_rxn_options:str):
+        """
+        Calculate the heat of formation for an alternative reaction.
+        """
+        
+        return
+
+
+    def calc_Hf_allrungs(self, s: str, saturate: int or str=1) -> tuple:
         """
         Calculates the Hf of a given species at each CBH rung.
         Assumes that calc_Hf has already been run or the database
@@ -422,7 +562,7 @@ class calcCBH:
         ARGUMENTS
         ---------
         :s:         [str] SMILES string of the target species.
-        :saturate:  [int] Atomic number of saturation element.
+        :saturate:  [int or str] Atomic number of saturation element.
 
         RETURN
         ------
@@ -430,6 +570,11 @@ class calcCBH:
             Hrxn    [dict] {rung : heat of reaction}
             Hf      [dict] {rung : heat of formation}
         """
+        
+        ptable = GetPeriodicTable()
+        if type(saturate) == str:
+            saturate = ptable.GetAtomicNumber(saturate)
+        saturate_sym = ptable.GetElementSymbol(saturate)
 
         s = CanonSmiles(s) # standardize SMILES
         s_cbh = CBH.buildCBH(s, saturate)
@@ -438,7 +583,22 @@ class calcCBH:
         Hrxn = {}
         for rung in range(s_cbh.highest_cbh):
             try:
-                Hrxn[rung], Hf[rung] = self.Hf(s, s_cbh, rung)
+                # TODO: error_messages will be sus 
+                prepend_str = 'Computing all heats of formation at all rungs. \nErrors below are reflected by this operation'
+                if s not in self.error_messages:
+                    self.error_messages[s] = []
+                self.error_messages[s].append(prepend_str)
+
+                test_rung = self.check_rung_usability(s, rung, s_cbh.cbh_rcts, s_cbh.cbh_pdts, saturate_sym)
+                if self.error_messages[s][-1] == prepend_str:
+                    if len(self.error_messages[s])==1:
+                        del self.error_messages[s]
+                    else:
+                        self.error_messages[s].pop() # delete prepend_str
+                else:
+                    self.error_messages[s].append('Conclude computation of all heats of formation for all rungs.')
+                rxn = self.cbh_to_rxn(s, s_cbh, rung)
+                Hrxn[rung], Hf[rung] = self.Hf(s, rxn, skip_precursor_check=True)
             except TypeError:
                 print(f'Cannot compute CBH-{rung}')
                 pass
@@ -624,7 +784,7 @@ class calcCBH:
             try:
                 sources = self.energies.loc[all_precursors, 'source'].values.tolist()
                 # if all values contributing to the energy of a precursor are NaN move down a rung
-                species_null = self.energies.loc[all_precursors, self.methods_keys].isnull().all(axis=1)
+                species_null = self.energies.loc[all_precursors, self.methods_keys].isna().all(axis=1)
                 if True in species_null.values:
                     test_rung -= 1
                     # error message
@@ -676,7 +836,7 @@ class calcCBH:
             
             #   2b. Get list of unique theories for each of the precursors
             if False not in [type(s)==str for s in sources]:
-                new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s and len(s.split('//'))>1 else s for s in sources]
+                new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s or 'alt_rxn' in s and len(s.split('//'))>1 else s for s in sources]
                 source_rank = list([self.rankings_rev[source] for source in new_sources])
             else: # if a species Hf hasn't been computed yet, its source will be type==float, so move down a rung
                 # This will appropriately trigger for overshooting cases
@@ -696,9 +856,7 @@ class calcCBH:
                     elif max(source_rank) > rank:
                         # This leaves potential to get better numbers for the precursors with larger ranks.
                         err_precur = list(compress(all_precursors, [r > rank for r in source_rank]))
-                        missing_precursors = ''
-                        for precursors in err_precur:
-                            missing_precursors += '\n\t   '+precursors
+                        missing_precursors = self._missing_precursor_str(err_precur)
                         self.error_messages[s].append(f"A precursor of the target molecule was computed with a level of theory that is worse than the target. \nConsider recomputing for: {missing_precursors}")
 
                     # This is where we need to decompose precursors until max(set_rank_source) < rank
@@ -710,21 +868,21 @@ class calcCBH:
                     #   I don't think I need to since if a higher rung is good, then it's the best option (unless # of reactants is < at lower rungs...)
                     #       Could try decomposing lower rungs, too if this is triggered, compare recorded number of reactants to that of lower rungs. 
                     #       If the number of reactants at the lower rungs is less, it's more favorable.
-                    
                     rxn_sources = self.energies.loc[list(rxn.keys()), 'source'].values.tolist() # sources of precursors in reaction
 
-                    named_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s and len(s.split('//'))>1 else s for s in rxn_sources]
+                    named_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s or 'alt_rxn' in s and len(s.split('//'))>1 else s for s in rxn_sources]
                     # indices where theory is worse than rank
                     worse_idxs = np.where(np.array([self.rankings_rev[s] for s in named_sources]) >= rank)[0]
-                    # dictionaries holding a precursor's respective rung rung or saturation atom
-                    d_rung = {precur : int(rxn_sources[i].split('//')[0].split('-')[1]) if len(rxn_sources[i].split('//')) > 1 else 'exp' for i, precur in enumerate(list(rxn.keys()))}
-                    d_sat = {precur : rxn_sources[i].split('//')[0].split('-')[2].replace('avg(', '').replace(')', '').split('+') if len(rxn_sources[i].split('//')) > 1 else 'exp' for i, precur in enumerate(list(rxn.keys()))}
-
                     decompose_precurs = [list(rxn.keys())[i] for i in worse_idxs] # precursors where the theory is worse than rank and must be decomposed
+                    # dictionaries holding a precursor's respective rung rung or saturation atom
+                    d_rung = {precur : int(rxn_sources[i].split('//')[0].split('-')[1]) if len(rxn_sources[i].split('//')) > 1 else 'alt' for i, precur in enumerate(list(rxn.keys()))}
+                    d_sat = {precur : rxn_sources[i].split('//')[0].split('-')[2].replace('avg(', '').replace(')', '').split('+') 
+                                if len(rxn_sources[i].split('//')) > 1 and 'CBH' in rxn_sources[i] else 'alt' for i, precur in enumerate(list(rxn.keys()))}
+
                     for precur in decompose_precurs:
                         
                         # deciding how to choose how to saturate
-                        if len(d_sat[precur]) == 1:
+                        if len(d_sat[precur]) == 1 and d_sat[precur] != 'alt':
                             p_sat = d_sat[precur][0]
                         elif label in d_sat[precur]:
                             p_sat = label
@@ -732,24 +890,35 @@ class calcCBH:
                             # TODO: how to choose complicated precursors
                             p_sat = 'H'
 
-                        p = CBH.buildCBH(precur, p_sat, allow_overshoot=True)
-                        try: 
-                            self.energies.loc[list(p.cbh_pdts[d_rung[precur]].keys()) + list(p.cbh_rcts[d_rung[precur]].keys())]
-                            # To the original equation, add the precursor's precursors (rcts + pdts) and delete the precursor from the orig_rxn
-                            rxn = add_dicts(rxn, {k : rxn[precur]*v for k, v in p.cbh_pdts[d_rung[precur]].items()}, {k : -rxn[precur]*v for k, v in p.cbh_rcts[d_rung[precur]].items()})
-                            del rxn[precur]
-                        except KeyError:
-                            # new precursor does not exist in database
-                            self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. Some reactants of {precur} did not exist in the database.")
-                            self.error_messages[s][-1] += f"\nThere is a possibility that CBH-{test_rung}-{label} of {s} is equivalent to a lower rung, but this cannot be rigorously tested automatically."
-                            verbose_error = True
-                            break
+                        if d_sat[precur] != 'alt':
+
+                            p = CBH.buildCBH(precur, p_sat, allow_overshoot=True)
+                            try: 
+                                self.energies.loc[list(p.cbh_pdts[d_rung[precur]].keys()) + list(p.cbh_rcts[d_rung[precur]].keys())]
+                                # To the original equation, add the precursor's precursors (rcts + pdts) and delete the precursor from the orig_rxn
+                                rxn = add_dicts(rxn, {k : rxn[precur]*v for k, v in p.cbh_pdts[d_rung[precur]].items()}, {k : -rxn[precur]*v for k, v in p.cbh_rcts[d_rung[precur]].items()})
+                                del rxn[precur]
+                            except KeyError:
+                                # new precursor does not exist in database
+                                self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. Some reactants of {precur} did not exist in the database.")
+                                self.error_messages[s][-1] += f"\nThere is a possibility that CBH-{test_rung}-{label} of {s} is equivalent to a lower rung, but this cannot be rigorously tested automatically."
+                                verbose_error = True
+                                break
+                        else:
+                            if set(self.alternative_rxn[precur][d_rung[precur]].keys()).issubset(self.energies.index.values):
+                                rxn = add_dicts(rxn, self.alternative_rxn[precur][d_rung[precur]])
+                                del rxn[precur]
+                            else:
+                                self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. Some reactants of {precur} did not exist in the database.")
+                                self.error_messages[s][-1] += f"\nThere is a possibility that CBH-{test_rung}-{label} of {s} is equivalent to a lower rung, but this cannot be rigorously tested automatically."
+                                verbose_error = True
+                                break
                     
                     else: # if the for loop doesn't break (most cases)
                         rxn_sources = self.energies.loc[list(rxn.keys()), 'source'].values.tolist()
                         
                         if False not in [type(s)==str for s in rxn_sources]:
-                            check_new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s and len(s.split('//'))>1 else s for s in rxn_sources]
+                            check_new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s or 'alt_rxn' in s and len(s.split('//'))>1 else s for s in rxn_sources]
                         else:
                             print('Uh Oh')
                             # Uh Oh
@@ -760,7 +929,10 @@ class calcCBH:
                     
                     # will only trigger if the for-loop broke
                     break
-
+                
+                # TODO: Might make more sense to move this up a loop to be more rigorous
+                #       It will slow down computation, but more accurate
+                #       But also note that ^ might be unecessary since we simplify to the previous level of theory
                 # Check whether the decomposed reaction is equivalent to other rungs
                 rung_equivalent, equiv_rung = self._check_rung_equivalency(s, rung, cbh_rcts, cbh_pdts, rxn, verbose_error)
                 
@@ -825,6 +997,27 @@ class calcCBH:
                 return True, r
 
         return False, top_rung
+
+
+    def _missing_precursor_str(self, missing_precursors):
+        """
+        Generate string for self.error_messages that formats all 
+        precursors in arg: missing_precursors.
+
+        ARGUMENTS
+        ---------
+        :missing_precursors:    [list] list of precursors that belong
+                                    in self.error_messages.
+
+        RETURNS
+        -------
+        :missing_precursor_str: [str] formated string
+        """
+        
+        missing_precursors_str = ''
+        for precursors in missing_precursors:
+            missing_precursors_str += '\n\t   '+precursors
+        return missing_precursors_str
     
     
     def print_errors(self):
