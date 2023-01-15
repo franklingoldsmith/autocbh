@@ -233,7 +233,7 @@ class calcCBH:
         return dfs
 
 
-    def calc_Hf(self, saturate:list=[1,9], max_rung:int=None, alt_rxn_options:str=None):
+    def calc_Hf(self, saturate:list=[1,9], max_rung:int=None, alt_rxn_option:str=None):
         """
         Calculate the heats of formation of species that do not have reference 
         values using the highest possible CBH scheme with the best possible level 
@@ -249,7 +249,7 @@ class calcCBH:
 
         :max_rung:      [int] (default=None) Max CBH rung allowed for Hf calculation
 
-        :alt_rxn_options: [str] (default=None)
+        :alt_rxn_option: [str] (default=None)
                     - "ignore" (ignr)
                         Ignore alternative reactions that may exist and only use CBH 
                         priority system. (same result as None)
@@ -281,12 +281,12 @@ class calcCBH:
                             reaction, and source.
         """
         
-        alt_rxn_options_list = ['ignore', 'best_alt','avg_alt', 'priority', 'priority_precursor']
-        if alt_rxn_options:
-            if type(alt_rxn_options)!= str:
-                raise TypeError('Arg "alt_rxn_options" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
-            elif alt_rxn_options not in alt_rxn_options_list:
-                raise NameError('The available options for arg "alt_rxn_options" are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
+        alt_rxn_option_list = ['ignore', 'best_alt','avg_alt', 'priority', 'priority_precursor']
+        if alt_rxn_option:
+            if type(alt_rxn_option)!= str:
+                raise TypeError('Arg "alt_rxn_option" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
+            elif alt_rxn_option not in alt_rxn_option_list:
+                raise NameError('The available options for arg "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
 
         ptable = GetPeriodicTable()
         saturate_syms = []
@@ -318,54 +318,84 @@ class calcCBH:
         for s in sorted_species:
             self.error_messages[s] = []
 
-            if s in self.alternative_rxn and alt_rxn_options and alt_rxn_options != "ignore":
-                ##### best alternative rxn option #####
-                if alt_rxn_options == "best_alt":
-                    best_alt = max(list(self.alternative_rxn[s].keys()))
-                    alt_rxn = {}
-                    alt_rxn[s] = self.alternative_rxn[s][best_alt]
-                    alt_rxn[s][s] = -1
+            if s in self.alternative_rxn and alt_rxn_option and alt_rxn_option != "ignore":
+                ##### avg and avg alternative rxns options #####
+                if alt_rxn_option == "best_alt" or alt_rxn_option == "avg_alt":
+                    best_alt = max(self.alternative_rxn[s].keys())
+                    if alt_rxn_option == "avg_alt":
+                        alt_rxn_keys = list(self.alternative_rxn[s].keys())
+                    elif alt_rxn_option == "best_alt":
+                        alt_rxn_keys = [best_alt]
 
-                    # check alternative rxn precursors existance in database
-                    species = list(alt_rxn[s].keys())
-                    if set(species).issubset(self.energies.index.values):
-                        species_null = self.energies.loc[species, self.methods_keys].isna().all(axis=1)
-                        # check ∆Hf
-                        if True in self.energies.loc[species, 'source'].isna():
-                            m_species = [species[i] for i, cond in enumerate(self.energies.loc[species, 'source'].isna().values) if cond==True]
-                            missing_precursors = self._missing_precursor_str(m_species)
-                            self.error_messages[s].append(f'The following precursors did not have usable reference heats of formation for the provided alternative reaction: {missing_precursors}')
+                    alt_rxns = {}
+                    for alt_rank in alt_rxn_keys:
+                        alt_rxns[alt_rank] = {}
+                        alt_rxns[alt_rank][s] = self.alternative_rxn[s][alt_rank]
+                        alt_rxns[alt_rank][s][s] = -1
 
-                        # check QM energies
-                        elif True in species_null:
-                            missing_precursors = self._missing_precursor_str(species_null.index[species_null.values])
-                            self.error_messages[s].append(f'The following precursors did not have usable QM values for the provided alternative reaction: {missing_precursors}')
+                        # TODO: make this a helper function
+                        # check alternative rxn precursors existance in database
+                        species = list(alt_rxns[alt_rank][s].keys())
+                        if set(species).issubset(self.energies.index.values):
+                            species_null = self.energies.loc[species, self.methods_keys].isna().all(axis=1)
+                            # check ∆Hf
+                            if True in self.energies.loc[species, 'source'].isna():
+                                m_species = [species[i] for i, cond in enumerate(self.energies.loc[species, 'source'].isna().values) if cond==True]
+                                missing_precursors = self._missing_precursor_str(m_species)
+                                self.error_messages[s].append(f'The following precursors did not have usable reference heats of formation for the provided alternative reaction: {missing_precursors}')
+                                del alt_rxns[alt_rank]
+                                if len(alt_rxns) == 0:
+                                    self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
+                                else:
+                                    self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
+                                continue
+
+                            # check QM energies
+                            elif True in species_null:
+                                missing_precursors = self._missing_precursor_str(species_null.index[species_null.values])
+                                self.error_messages[s].append(f'The following precursors did not have usable QM values for the provided alternative reaction: {missing_precursors}')
+                                del alt_rxns[alt_rank]
+                                if len(alt_rxns) == 0:
+                                    self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
+                                else:
+                                    self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
+                                continue
 
                         else:
-                            label = f'alt_rxn-{best_alt}-best'
-                            Hrxn[s], Hf[s] = self.Hf(s, alt_rxn, skip_precursor_check=True)
-                            final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
-                            self.energies.loc[s, 'DfH'] = final_Hf
-                            self.energies.loc[s, 'DrxnH'] = final_Hrxn
-                            self.energies.loc[s, 'source'] = label
-                            
-                            if len(self.error_messages[s]) == 0:
-                                del self.error_messages[s]
+                            m_species = [sp for sp in species if sp not in self.energies.index.values and sp != s]
+                            missing_precursors = self._missing_precursor_str(m_species)
+                            self.error_messages[s].append(f'Precursors in provided alternative reaction did not exist in database: {missing_precursors}')
+                            self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
+                            del alt_rxns[alt_rank]
+                            if len(alt_rxns) == 0:
+                                self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
+                            else:
+                                self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
                             continue
-
-                    else:
-                        m_species = [sp for sp in species if sp not in self.energies.index.values and sp != s]
-                        missing_precursors = self._missing_precursor_str(m_species)
-                        self.error_messages[s].append(f'Precursors in provided alternative reaction did not exist in database: {missing_precursors}')
-
-                ##### avg alternative rxns option #####
-                elif alt_rxn_options == "avg_alt":
-                    pass
+                    
+                    if len(alt_rxns) > 0:
+                        # weight the different reactions
+                        Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, alt_rxns, skip_precursor_check=True)
+                        
+                        if alt_rxn_option == "best_alt":
+                            label = f'alt_rxn-{best_alt}-best'
+                        elif alt_rxn_option == "avg_alt":
+                            label = f'alt_rxn-{best_alt}-avg'
+                        
+                        final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
+                        self.energies.loc[s, 'DfH'] = final_Hf
+                        self.energies.loc[s, 'DrxnH'] = final_Hrxn
+                        self.energies.loc[s, 'source'] = label
+                        
+                        if len(self.error_messages[s]) == 0:
+                            del self.error_messages[s]
+                        continue
+                    
                 ##### prioritize #####
-                elif alt_rxn_options == "priority":
+                elif alt_rxn_option == "priority":
                     pass
                 ##### prioritize precursor #####
-                elif alt_rxn_options == "priority_precursor":
+                elif alt_rxn_option == "priority_precursor":
                     pass
 
             cbhs = []
@@ -396,31 +426,8 @@ class calcCBH:
                     label += sym
                     if i == len(s_syms)-1:
                         label += ')'
-
-            # compute Hrxn and Hf 
-            if len(cbhs) == 1:
-                # if only one saturation
-                rxn = self.cbh_to_rxn(s, cbhs[0], cbhs_rungs[0])
-                Hrxn[s], Hf[s] = self.Hf(s, rxn, skip_precursor_check=True)
-            else:
-                # otherwise weight the saturations
-                Hrxn_ls = []
-                Hf_ls = []
-                for i, cbh in enumerate(cbhs):
-                    rxn = self.cbh_to_rxn(s, cbh, cbhs_rungs[i])
-                    Hrxn_s, Hf_s = self.Hf(s, rxn, skip_precursor_check=True)
-                    Hrxn_ls.append(Hrxn_s)
-                    Hf_ls.append(Hf_s)
-
-                weights = {}
-                for k in Hrxn_ls[0].keys():
-                    weights[k] = self._weight(*[Hrxn_s[k] for Hrxn_s in Hrxn_ls])
-                # weights = {method_keys : [weights_cbh_type]}
-                Hrxn[s] = {}
-                Hf[s] = {}
-                for k in weights.keys():
-                    Hrxn[s][k] = sum([weights[k][i]*Hrxn_s[k] for i, Hrxn_s in enumerate(Hrxn_ls)])
-                    Hf[s][k] = sum([weights[k][i]*Hf_s[k] for i, Hf_s in enumerate(Hf_ls)])
+            
+            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, cbhs, skip_precursor_check=True, cbh_rungs=cbhs_rungs)
 
             # Choose the best possible method to assign to the energies dataframe
             final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
@@ -545,7 +552,88 @@ class calcCBH:
         return Hrxn, Hf
 
 
-    def calc_Hf_alt_rxn(self, alt_rxn_options:str):
+    def _weighting_scheme_Hf(self, s, cbh_or_altrxn:list or dict, skip_precursor_check=False, cbh_rungs:list=None) -> dict:
+        """
+        Weighting scheme the Hf values for each level of theory given
+        a list of CBH.buildCBH objects or a dictionary containing 
+        reactions.
+
+        ARGUMENTS
+        ---------
+        :s:             [str] SMILES string of the target species.
+        
+        :cbh_or_altrxn: [list(CBH.buildCBH) or dict] 
+            CBH.buildCBH object or dictionary containing reactions.
+            If dict, it must follow this format: 
+                {rank : {s: {rxn_dict}}}
+
+        :skip_precursor_check [bool] (default = False)
+                        Whether skip the procedure to check if precursors 
+                        exist in database or if they have real values. 
+                        Suggested to skip only when the cbh_rung is 
+                        validated after check_rung_usability method is
+                        used.
+
+        :cbh_rungs:     [list] (default=None) list of CBH rungs to weight.
+                            Supply if cbh_or_altrxn is a list of 
+                            CBH.buildCBH objects.
+
+        RETURNS
+        -------
+        weighted_Hrxn:       [dict] Weighted Hrxn values for each level of theory.
+
+        weighted_Hf:         [dict] Weighted Hf values for each level of theory.
+        """
+
+        if isinstance(cbh_or_altrxn, list):
+            for cbh in cbh_or_altrxn:
+                if not isinstance(cbh, CBH.buildCBH):
+                    raise TypeError(f'List provided to function must contain CBH.buildCBH objects. \nType {type(cbh)} was provided instead.')
+            if not isinstance(cbh_or_altrxn, list):
+                raise ValueError(f'Since arg: cbh_or_altrxn was a list of CBH.buildCBH objects, a list of CBH rungs must be provided to the arg: cbh_rungs.')
+
+        elif isinstance(cbh_or_altrxn, dict):
+            # TODO: Might need an additional check
+            pass
+
+        # compute Hrxn and Hf
+        # if only one saturation
+        if len(cbh_or_altrxn) == 1:
+            if isinstance(cbh_or_altrxn, list):
+                rxn = self.cbh_to_rxn(s, cbh_or_altrxn[0], cbh_rungs[0])
+            elif isinstance(cbh_or_altrxn, dict):
+                rxn = cbh_or_altrxn[list(cbh_or_altrxn.keys())[0]]
+
+            weighted_Hrxn, weighted_Hf = self.Hf(s, rxn, skip_precursor_check=skip_precursor_check)
+        # Weight multiple reactions
+        else:
+            Hrxn_ls = []
+            Hf_ls = []
+            if isinstance(cbh_or_altrxn, list):
+                iterable_obj = cbh_or_altrxn
+            elif isinstance(cbh_or_altrxn, dict):
+                iterable_obj = cbh_or_altrxn.values()
+            for i, rxn in enumerate(iterable_obj):
+                if isinstance(cbh_or_altrxn, list):
+                    rxn = self.cbh_to_rxn(s, rxn, cbh_rungs[i])
+                Hrxn_s, Hf_s = self.Hf(s, rxn, skip_precursor_check=skip_precursor_check)
+                Hrxn_ls.append(Hrxn_s)
+                Hf_ls.append(Hf_s)
+
+            weights = {}
+            for k in Hrxn_ls[0]:
+                weights[k] = self._weight(*[Hrxn_s[k] for Hrxn_s in Hrxn_ls])
+            # weights = {method_keys : [weights_cbh_type]}
+            weighted_Hrxn = {}
+            weighted_Hf = {}
+            for k in weights.keys():
+                weighted_Hrxn[k] = sum([weights[k][i]*Hrxn_s[k] for i, Hrxn_s in enumerate(Hrxn_ls)])
+                weighted_Hf[k] = sum([weights[k][i]*Hf_s[k] for i, Hf_s in enumerate(Hf_ls)])
+            
+        return weighted_Hrxn, weighted_Hf
+
+
+    def calc_Hf_alt_rxn(self, alt_rxn_option:str):
         """
         Calculate the heat of formation for an alternative reaction.
         """
