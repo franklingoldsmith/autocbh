@@ -263,13 +263,13 @@ class calcCBH:
                         Average all alternative reactions of a species and does not
                         use any default CBH rungs.
 
-                    - "priority" (prty)
+                    - "priority_by_user" (user_priority)
                         Include alternative reactions as possible rungs (USER DEFINED), 
                         but it will yield to better ranking CBH rungs if they exist. 
                         Further, they will weighted if equal rank to other reactions 
                         or a given CBH rung.
 
-                    - "priority_precursor" (pprty)
+                    - "priority_by_coeff" (coeff_priority)
                         Included alternative reactions and will follow CBH priority 
                         pipeline. However, it will prioritize the equations with the 
                         least number of precusors in the reaction since this metric
@@ -281,12 +281,12 @@ class calcCBH:
                             reaction, and source.
         """
         
-        alt_rxn_option_list = ['ignore', 'best_alt','avg_alt', 'priority', 'priority_precursor']
+        alt_rxn_option_list = ['ignore', 'best_alt','avg_alt', 'priority_by_user', 'priority_by_coeff']
         if alt_rxn_option:
             if type(alt_rxn_option)!= str:
-                raise TypeError('Arg "alt_rxn_option" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
+                raise TypeError('Arg "alt_rxn_option" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "priority_by_user", "priority_by_coeff".')
             elif alt_rxn_option not in alt_rxn_option_list:
-                raise NameError('The available options for arg "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "priority", "priority_precursor".')
+                raise NameError('The available options for arg "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "priority_by_user", "priority_by_coeff".')
 
         ptable = GetPeriodicTable()
         saturate_syms = []
@@ -327,75 +327,25 @@ class calcCBH:
                     elif alt_rxn_option == "best_alt":
                         alt_rxn_keys = [best_alt]
 
-                    alt_rxns = {}
-                    for alt_rank in alt_rxn_keys:
-                        alt_rxns[alt_rank] = {}
-                        alt_rxns[alt_rank][s] = self.alternative_rxn[s][alt_rank]
-                        alt_rxns[alt_rank][s][s] = -1
-
-                        # TODO: make this a helper function
-                        # check alternative rxn precursors existance in database
-                        species = list(alt_rxns[alt_rank][s].keys())
-                        if set(species).issubset(self.energies.index.values):
-                            species_null = self.energies.loc[species, self.methods_keys].isna().all(axis=1)
-                            # check ∆Hf
-                            if True in self.energies.loc[species, 'source'].isna():
-                                m_species = [species[i] for i, cond in enumerate(self.energies.loc[species, 'source'].isna().values) if cond==True]
-                                missing_precursors = self._missing_precursor_str(m_species)
-                                self.error_messages[s].append(f'The following precursors did not have usable reference heats of formation for the provided alternative reaction: {missing_precursors}')
-                                del alt_rxns[alt_rank]
-                                if len(alt_rxns) == 0:
-                                    self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
-                                else:
-                                    self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
-                                continue
-
-                            # check QM energies
-                            elif True in species_null:
-                                missing_precursors = self._missing_precursor_str(species_null.index[species_null.values])
-                                self.error_messages[s].append(f'The following precursors did not have usable QM values for the provided alternative reaction: {missing_precursors}')
-                                del alt_rxns[alt_rank]
-                                if len(alt_rxns) == 0:
-                                    self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
-                                else:
-                                    self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
-                                continue
-
-                        else:
-                            m_species = [sp for sp in species if sp not in self.energies.index.values and sp != s]
-                            missing_precursors = self._missing_precursor_str(m_species)
-                            self.error_messages[s].append(f'Precursors in provided alternative reaction did not exist in database: {missing_precursors}')
-                            self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
-                            del alt_rxns[alt_rank]
-                            if len(alt_rxns) == 0:
-                                self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
-                            else:
-                                self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
-                            continue
-                    
-                    if len(alt_rxns) > 0:
-                        # weight the different reactions
+                    alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
+                    if alt_rxns:
                         Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, alt_rxns, skip_precursor_check=True)
-                        
-                        if alt_rxn_option == "best_alt":
-                            label = f'alt_rxn-{best_alt}-best'
-                        elif alt_rxn_option == "avg_alt":
-                            label = f'alt_rxn-{best_alt}-avg'
-                        
+                        # Choose the best possible method to assign to the energies dataframe
+                        label = f'alt_rxn-{best_alt}-{alt_rxn_option}'
                         final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
                         self.energies.loc[s, 'DfH'] = final_Hf
                         self.energies.loc[s, 'DrxnH'] = final_Hrxn
                         self.energies.loc[s, 'source'] = label
-                        
+
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
                         continue
                     
                 ##### prioritize #####
-                elif alt_rxn_option == "priority":
+                elif alt_rxn_option == "priority_by_user":
                     pass
                 ##### prioritize precursor #####
-                elif alt_rxn_option == "priority_precursor":
+                elif alt_rxn_option == "priority_by_coeff":
                     pass
 
             cbhs = []
@@ -1018,9 +968,6 @@ class calcCBH:
                     # will only trigger if the for-loop broke
                     break
                 
-                # TODO: Might make more sense to move this up a loop to be more rigorous
-                #       It will slow down computation, but more accurate
-                #       But also note that ^ might be unecessary since we simplify to the previous level of theory
                 # Check whether the decomposed reaction is equivalent to other rungs
                 rung_equivalent, equiv_rung = self._check_rung_equivalency(s, rung, cbh_rcts, cbh_pdts, rxn, verbose_error)
                 
@@ -1087,6 +1034,65 @@ class calcCBH:
         return False, top_rung
 
 
+    def _check_altrxn_usability(self, s:str, alt_rxn_keys:list):
+        """
+        Helper method to check whether the species present in the provided
+        alternative reaction(s) exist in the database.
+
+        ARGUMENTS
+        ---------
+        :s:             [str] Species SMILES string
+
+        :alt_rxn_keys:  [list] List of keys defining the alternative reactions 
+                            to check for the species.
+
+        RETURN
+        ------
+        alt_rxns [dict or None] Returns usable alt_rxns dictionary. Otherwise
+                        returns None.
+                        alt_rxns = {alt_rank : {s : {alt_rxn_species : coeff}}}
+        """
+        alt_rxns = {}
+        for alt_rank in alt_rxn_keys:
+            alt_rxns[alt_rank] = {}
+            alt_rxns[alt_rank][s] = self.alternative_rxn[s][alt_rank]
+            alt_rxns[alt_rank][s][s] = -1
+
+            # check alternative rxn precursors existance in database
+            species = list(alt_rxns[alt_rank][s].keys())
+            if set(species).issubset(self.energies.index.values):
+                species_null = self.energies.loc[species, self.methods_keys].isna().all(axis=1)
+                # check ∆Hf
+                if True in self.energies.loc[species, 'source'].isna():
+                    m_species = [species[i] for i, cond in enumerate(self.energies.loc[species, 'source'].isna().values) if cond==True]
+                    missing_precursors = self._missing_precursor_str(m_species)
+                    self.error_messages[s].append(f'The following precursors did not have usable reference heats of formation for the provided alternative reaction: {missing_precursors}')
+                    del alt_rxns[alt_rank]
+                    self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
+
+                # check QM energies
+                elif True in species_null:
+                    missing_precursors = self._missing_precursor_str(species_null.index[species_null.values])
+                    self.error_messages[s].append(f'The following precursors did not have usable QM values for the provided alternative reaction: {missing_precursors}')
+                    del alt_rxns[alt_rank]
+                    self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
+
+            else:
+                m_species = [sp for sp in species if sp not in self.energies.index.values and sp != s]
+                missing_precursors = self._missing_precursor_str(m_species)
+                self.error_messages[s].append(f'Precursors in provided alternative reaction did not exist in database: {missing_precursors}')
+                self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
+                del alt_rxns[alt_rank]
+                self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
+
+        if len(alt_rxns) != 0:
+            return alt_rxns
+        else:
+            # when no alternative reactions are usable
+            self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
+            return None
+
+    
     def _missing_precursor_str(self, missing_precursors):
         """
         Generate string for self.error_messages that formats all 
