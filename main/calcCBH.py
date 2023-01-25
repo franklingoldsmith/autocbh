@@ -307,6 +307,13 @@ class calcCBH:
             else:
                 TypeError("Elements within saturation list must be int or str.")
 
+        def choose_best_method_and_assign(Hrxn_d:dict, Hf_d:dict, label:str):
+            """Chooses best method then assigns calculated values to self.energies dataframe."""
+            final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn_d, Hf_d, label)
+            self.energies.loc[s, 'DfH'] = final_Hf
+            self.energies.loc[s, 'DrxnH'] = final_Hrxn
+            self.energies.loc[s, 'source'] = label
+
         Hf = {}
         Hrxn = {}
         # sort by the max distance between two atoms in a molecule
@@ -332,18 +339,84 @@ class calcCBH:
                         Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, alt_rxns, skip_precursor_check=True)
                         # Choose the best possible method to assign to the energies dataframe
                         label = f'alt_rxn-{best_alt}-{alt_rxn_option}'
-                        final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
-                        self.energies.loc[s, 'DfH'] = final_Hf
-                        self.energies.loc[s, 'DrxnH'] = final_Hrxn
-                        self.energies.loc[s, 'source'] = label
+                        choose_best_method_and_assign(Hrxn[s], Hf[s], label)
 
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
                         continue
                     
-                ##### prioritize #####
+                ##### prioritize by user defined rung numbers #####
                 elif alt_rxn_option == "priority_by_user":
-                    pass
+                    alt_rxn_keys = list(self.alternative_rxn[s].keys())
+                    alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
+                    if alt_rxns:
+                        best_alt = max(alt_rxns.keys())
+                        alt_rxns = {best_alt : alt_rxns[best_alt]}
+                        cbhs = []
+                        cbhs_rungs = []
+                        for i, sat in enumerate(saturate_nums):
+                            cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
+                            if max_rung is not None:
+                                rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
+                            else:
+                                rung = cbhs[-1].highest_cbh
+                            cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
+                        
+                        idx = np.where(np.array(cbhs_rungs) == np.array(cbhs_rungs).max())[0].tolist()
+                        cbhs = [cbhs[i] for i in idx]
+                        cbhs_rungs = [cbhs_rungs[i] for i in idx]
+                        s_syms = [saturate_syms[i] for i in idx]
+
+                        # user rung is better than automated rungs
+                        if best_alt > cbhs_rungs[0]:
+                            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, alt_rxns, skip_precursor_check=True)
+                            # Choose the best possible method to assign to the energies dataframe
+                            label = f'alt_rxn-{best_alt}-user_priority(alt_rxn)'
+                            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+
+                            if len(self.error_messages[s]) == 0:
+                                del self.error_messages[s]
+                            continue
+                        
+                        # EQUAL user and automated rungs 
+                        elif best_alt == cbhs_rungs[0]:
+                            print(cbhs_rungs)
+                            new_rxn_d = {}
+                            for i, rxn in enumerate(cbhs):
+                                new_rxn_d[i] = self.cbh_to_rxn(s, rxn, cbhs_rungs[i])
+                            new_rxn_d[i+1] = alt_rxns[best_alt]
+                            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, new_rxn_d, skip_precursor_check=True)
+
+                            # Choose the best possible method to assign to the energies dataframe
+                            label = f'alt_rxn-{best_alt}-user_priority(avg_w_cbh)'
+                            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+
+                            if len(self.error_messages[s]) == 0:
+                                del self.error_messages[s]
+                            continue
+
+                        # user rung is worse than automated rungs
+                        elif best_alt < cbhs_rungs[0]:
+                            if len(cbhs_rungs) == 1:
+                                label = f'CBH-{str(cbhs_rungs[0])}-{s_syms[0]}'
+                            elif len(cbhs_rungs) > 1:
+                                label = f'CBH-{str(cbhs_rungs[0])}-avg('
+                                for i, sym in enumerate(s_syms):
+                                    if i > 0:
+                                        label += '+'
+                                    label += sym
+                                    if i == len(s_syms)-1:
+                                        label += ')'
+                            
+                            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, cbhs, skip_precursor_check=True, cbh_rungs=cbhs_rungs)
+
+                            # Choose the best possible method to assign to the energies dataframe
+                            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+
+                            if len(self.error_messages[s]) == 0:
+                                del self.error_messages[s]
+                            continue
+
                 ##### prioritize precursor #####
                 elif alt_rxn_option == "priority_by_coeff":
                     pass
@@ -380,10 +453,7 @@ class calcCBH:
             Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, cbhs, skip_precursor_check=True, cbh_rungs=cbhs_rungs)
 
             # Choose the best possible method to assign to the energies dataframe
-            final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn[s], Hf[s], label)
-            self.energies.loc[s, 'DfH'] = final_Hf
-            self.energies.loc[s, 'DrxnH'] = final_Hrxn
-            self.energies.loc[s, 'source'] = label
+            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
 
         if len(self.error_messages.keys()) != 0:
             print(f'Process completed with errors in {len(self.error_messages.keys())} species')
@@ -411,6 +481,7 @@ class calcCBH:
         :rxn:       [dict] Includes the negated reactant coefficient
                         and product coefficients. The species, s, is in
                         the dictionary with a negated coefficient.
+                        {species SMILES: {reactant SMILES: coefficient}}
         """
         
         rxn = {} 
