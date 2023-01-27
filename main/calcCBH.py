@@ -352,6 +352,7 @@ class calcCBH:
                     if alt_rxns:
                         best_alt = max(alt_rxns.keys())
                         alt_rxns = {best_alt : alt_rxns[best_alt]}
+                        
                         cbhs = []
                         cbhs_rungs = []
                         for i, sat in enumerate(saturate_nums):
@@ -373,14 +374,9 @@ class calcCBH:
                             # Choose the best possible method to assign to the energies dataframe
                             label = f'alt_rxn-{best_alt}-user_priority(alt_rxn)'
                             choose_best_method_and_assign(Hrxn[s], Hf[s], label)
-
-                            if len(self.error_messages[s]) == 0:
-                                del self.error_messages[s]
-                            continue
                         
                         # EQUAL user and automated rungs 
                         elif best_alt == cbhs_rungs[0]:
-                            print(cbhs_rungs)
                             new_rxn_d = {}
                             for i, rxn in enumerate(cbhs):
                                 new_rxn_d[i] = self.cbh_to_rxn(s, rxn, cbhs_rungs[i])
@@ -390,10 +386,6 @@ class calcCBH:
                             # Choose the best possible method to assign to the energies dataframe
                             label = f'alt_rxn-{best_alt}-user_priority(avg_w_cbh)'
                             choose_best_method_and_assign(Hrxn[s], Hf[s], label)
-
-                            if len(self.error_messages[s]) == 0:
-                                del self.error_messages[s]
-                            continue
 
                         # user rung is worse than automated rungs
                         elif best_alt < cbhs_rungs[0]:
@@ -409,17 +401,76 @@ class calcCBH:
                                         label += ')'
                             
                             Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, cbhs, skip_precursor_check=True, cbh_rungs=cbhs_rungs)
-
-                            # Choose the best possible method to assign to the energies dataframe
                             choose_best_method_and_assign(Hrxn[s], Hf[s], label)
 
-                            if len(self.error_messages[s]) == 0:
-                                del self.error_messages[s]
-                            continue
+                        if len(self.error_messages[s]) == 0:
+                            del self.error_messages[s]
+                        continue
 
                 ##### prioritize precursor #####
                 elif alt_rxn_option == "priority_by_coeff":
-                    pass
+                    alt_rxn_keys = list(self.alternative_rxn[s].keys())
+                    alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
+                    if alt_rxns:
+                        rank_totalcoeff = {rank : sum(map(abs, alt_rxns[rank][s].values())) for rank in alt_rxns}
+                        mx = max(rank_totalcoeff.values())
+                        mx_keys_alt = [k for k, v in rank_totalcoeff.items() if v == mx]
+
+                        cbhs = []
+                        cbhs_rungs = []
+                        for i, sat in enumerate(saturate_nums):
+                            cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
+                            if max_rung is not None:
+                                rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
+                            else:
+                                rung = cbhs[-1].highest_cbh
+                            cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
+
+                        new_rxn_d = {}
+                        for i, rxn in enumerate(cbhs):
+                            new_rxn_d[i] = self.cbh_to_rxn(s, rxn, cbhs_rungs[i])
+                        cbh_totalcoeff = {i : sum(map(abs, new_rxn_d[i][s].values())) for i in new_rxn_d}
+
+                        # if alt_rxn has the highest total coeff, use alt_rxn
+                        if mx < max(cbh_totalcoeff.values()):
+                            new_rxn_d = {i: alt_rxns[i] for i in mx_keys_alt}
+                            label = f'alt_rxn-{max(mx_keys_alt)}-coeff_priority(alt_rxn)'
+
+                        # if alt_rxn has the same total coeff as cbh, use average of both
+                        elif mx == max(cbh_totalcoeff.values()):
+                            mx_keys_cbh = [k for k, v in cbh_totalcoeff.items() if v == mx]
+                            new_rxn_d = [new_rxn_d[k] for k in mx_keys_cbh]
+                            new_rxn_d.extend([alt_rxns[i] for i in mx_keys_alt])
+                            new_rxn_d = {i:v for i, v in enumerate(new_rxn_d)}
+                            
+                            label = f'alt_rxn-{max(mx_keys_alt)}-coeff_priority(avg_w_cbh)'
+
+                        # if alt_rxn has the lowest total coeff, use cbh protocol
+                        elif mx > max(cbh_totalcoeff.values()):
+                            # do normal protocol if alternative rxns are worse than cbh based on coeff
+                            # Do not follow the coefficient rule between equal rung cbhs to prevent inconsistencies
+                            #   This can be added if a new method for coeff priority is implemented for general procedures
+                            idx = np.where(np.array(cbhs_rungs) == np.array(cbhs_rungs).max())[0].tolist()
+                            cbhs = [cbhs[i] for i in idx]
+                            cbhs_rungs = [cbhs_rungs[i] for i in idx]
+                            s_syms = [saturate_syms[i] for i in idx]
+                            
+                            if len(cbhs_rungs) == 1:
+                                label = f'CBH-{str(cbhs_rungs[0])}-{s_syms[0]}'
+                            elif len(cbhs_rungs) > 1:
+                                label = f'CBH-{str(cbhs_rungs[0])}-avg('
+                                for i, sym in enumerate(s_syms):
+                                    if i > 0:
+                                        label += '+'
+                                    label += sym
+                                    if i == len(s_syms)-1:
+                                        label += ')'
+
+                        Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, new_rxn_d, skip_precursor_check=True)
+                        choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+                        if len(self.error_messages[s]) == 0:
+                            del self.error_messages[s]
+                        continue
 
             cbhs = []
             cbhs_rungs = []
@@ -690,27 +741,35 @@ class calcCBH:
 
         Hf = {}
         Hrxn = {}
-        for rung in range(s_cbh.highest_cbh):
+        if s in self.error_messages:
+            start_err_len = len(self.error_messages[s])
+        else:
+            start_err_len = None
+
+        for rung in range(s_cbh.highest_cbh+1):
             try:
-                # TODO: error_messages will be sus 
                 prepend_str = 'Computing all heats of formation at all rungs. \nErrors below are reflected by this operation'
                 if s not in self.error_messages:
                     self.error_messages[s] = []
-                self.error_messages[s].append(prepend_str)
+                    self.error_messages[s].append(prepend_str)
 
                 test_rung = self.check_rung_usability(s, rung, s_cbh.cbh_rcts, s_cbh.cbh_pdts, saturate_sym)
-                if self.error_messages[s][-1] == prepend_str:
-                    if len(self.error_messages[s])==1:
-                        del self.error_messages[s]
-                    else:
-                        self.error_messages[s].pop() # delete prepend_str
-                else:
-                    self.error_messages[s].append('Conclude computation of all heats of formation for all rungs.')
+                
                 rxn = self.cbh_to_rxn(s, s_cbh, rung)
                 Hrxn[rung], Hf[rung] = self.Hf(s, rxn, skip_precursor_check=True)
             except TypeError:
-                print(f'Cannot compute CBH-{rung}')
-                pass
+                raise TypeError(f'Cannot compute CBH-{rung}')
+
+        if self.error_messages[s][-1] == prepend_str:
+            if len(self.error_messages[s])==1:
+                del self.error_messages[s]
+            else:
+                self.error_messages[s].pop() # delete prepend_str
+        else:
+            self.error_messages[s].append('Conclude computation of all heats of formation for all rungs.')
+
+        if s in self.error_messages and start_err_len > len(self.error_messages[s]):
+            print(f'Errors encountered while computing all heats of formation for {s}. View with error_messages[{s}] methods.')
 
         return Hrxn, Hf
 
