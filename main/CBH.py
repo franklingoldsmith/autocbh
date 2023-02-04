@@ -13,7 +13,7 @@ class buildCBH:
     ATTRIBUTES
     ----------
     :mol:           [RDKit Mol obj]
-    :smiles:         [str] RDKit's SMILES respresentation of the target molecule
+    :smiles:        [str] RDKit's SMILES respresentation of the target molecule
     :graph:         [IGraph graph obj] IGraph's graph representation of the target 
                                         molecule
     :graph_adj:     [np array] adjacency matrix of target molecule graph
@@ -21,7 +21,7 @@ class buildCBH:
     
     Same as above but with explicit hydrogens
     :mol_h:         [RDKit Mol obj] molecule 
-    :smiles_h:       [str] RDKit's SMILES respresentation of the target molecule
+    :smiles_h:      [str] RDKit's SMILES respresentation of the target molecule
     :graph_h:       [IGraph graph obj] IGraph's graph representation of the target 
                                         molecule
     :graph_adj_h:   [np array] adjacency matrix of target molecule graph

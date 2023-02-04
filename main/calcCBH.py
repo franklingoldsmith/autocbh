@@ -233,7 +233,7 @@ class calcCBH:
         return dfs
 
 
-    def calc_Hf(self, saturate:list=[1,9], max_rung:int=None, alt_rxn_option:str=None):
+    def calc_Hf(self, saturate:list=[1,9], priority_by_coeff:bool=False, max_rung:int=None, alt_rxn_option:str=None):
         """
         Calculate the heats of formation of species that do not have reference 
         values using the highest possible CBH scheme with the best possible level 
@@ -247,6 +247,14 @@ class calcCBH:
                             species. String representations of the elements 
                             also works. (default=[1,9] for hydrogen and fluorine)
 
+        :priority_by_coeff: [bool] (default=False)
+                            Choose to prioritize CBH rungs based on the total number
+                            of reactants in the reaction. If True, the CBH rung with
+                            the least number of reactants will be used. If False,
+                            the highest rung number will by prioritized.
+                            If alt_rxn_option is "priority", then it will also take 
+                            alternative reactions into account.
+
         :max_rung:      [int] (default=None) Max CBH rung allowed for Hf calculation
 
         :alt_rxn_option: [str] (default=None)
@@ -255,25 +263,16 @@ class calcCBH:
                         priority system. (same result as None)
                     
                     - "best_alt" (best)
-                        Always use the alternative reaction for all species that have
-                        them even if better ranking CBH rungs exist. Just the best 
-                        rung.
+                        Always uses the best user-defined alternative reaction for a 
+                        species even if better ranking CBH rungs exist.
 
                     - "avg_alt" (avg)
                         Average all alternative reactions of a species and does not
                         use any default CBH rungs.
 
-                    - "priority_by_user" (user_priority)
-                        Include alternative reactions as possible rungs (USER DEFINED), 
-                        but it will yield to better ranking CBH rungs if they exist. 
-                        Further, they will weighted if equal rank to other reactions 
-                        or a given CBH rung.
-
-                    - "priority_by_coeff" (coeff_priority)
+                    - "include" (priority) - or maybe "include"?
                         Included alternative reactions and will follow CBH priority 
-                        pipeline. However, it will prioritize the equations with the 
-                        least number of precusors in the reaction since this metric
-                        is often correlated to accuracy of the CBH equation.
+                        protocol. 
 
         RETURN
         ------
@@ -281,12 +280,12 @@ class calcCBH:
                             reaction, and source.
         """
         
-        alt_rxn_option_list = ['ignore', 'best_alt','avg_alt', 'priority_by_user', 'priority_by_coeff']
+        alt_rxn_option_list = ['ignore', 'best_alt','avg_alt', 'include']
         if alt_rxn_option:
             if type(alt_rxn_option)!= str:
-                raise TypeError('Arg "alt_rxn_option" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "priority_by_user", "priority_by_coeff".')
+                raise TypeError('Arg "alt_rxn_option" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "include".')
             elif alt_rxn_option not in alt_rxn_option_list:
-                raise NameError('The available options for arg "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "priority_by_user", "priority_by_coeff".')
+                raise NameError('The available options for arg "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
 
         ptable = GetPeriodicTable()
         saturate_syms = []
@@ -346,7 +345,7 @@ class calcCBH:
                         continue
                     
                 ##### prioritize by user defined rung numbers #####
-                elif alt_rxn_option == "priority_by_user":
+                elif alt_rxn_option == "include" and not priority_by_coeff:
                     alt_rxn_keys = list(self.alternative_rxn[s].keys())
                     alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
@@ -407,14 +406,14 @@ class calcCBH:
                             del self.error_messages[s]
                         continue
 
-                ##### prioritize precursor #####
-                elif alt_rxn_option == "priority_by_coeff":
+                ##### prioritize by coeff #####
+                elif alt_rxn_option == "include" and priority_by_coeff:
                     alt_rxn_keys = list(self.alternative_rxn[s].keys())
                     alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
-                        rank_totalcoeff = {rank : sum(map(abs, alt_rxns[rank][s].values())) for rank in alt_rxns}
-                        mx = max(rank_totalcoeff.values())
-                        mx_keys_alt = [k for k, v in rank_totalcoeff.items() if v == mx]
+                        rank_totalcoeff = {rank : sum(alt_rxns[rank][s].values()) for rank in alt_rxns}
+                        mn = min(rank_totalcoeff.values())
+                        mn_keys_alt = [k for k, v in rank_totalcoeff.items() if v == mn]
 
                         cbhs = []
                         cbhs_rungs = []
@@ -432,25 +431,23 @@ class calcCBH:
                         cbh_totalcoeff = {i : sum(map(abs, new_rxn_d[i][s].values())) for i in new_rxn_d}
 
                         # if alt_rxn has the highest total coeff, use alt_rxn
-                        if mx < max(cbh_totalcoeff.values()):
-                            new_rxn_d = {i: alt_rxns[i] for i in mx_keys_alt}
-                            label = f'alt_rxn-{max(mx_keys_alt)}-coeff_priority(alt_rxn)'
+                        if mn < min(cbh_totalcoeff.values()):
+                            new_rxn_d = {i: alt_rxns[i] for i in mn_keys_alt}
+                            label = f'alt_rxn-{max(mn_keys_alt)}-coeff_priority(alt_rxn)'
 
                         # if alt_rxn has the same total coeff as cbh, use average of both
-                        elif mx == max(cbh_totalcoeff.values()):
-                            mx_keys_cbh = [k for k, v in cbh_totalcoeff.items() if v == mx]
-                            new_rxn_d = [new_rxn_d[k] for k in mx_keys_cbh]
-                            new_rxn_d.extend([alt_rxns[i] for i in mx_keys_alt])
+                        elif mn == min(cbh_totalcoeff.values()):
+                            mn_keys_cbh = [k for k, v in cbh_totalcoeff.items() if v == mn]
+                            new_rxn_d = [new_rxn_d[k] for k in mn_keys_cbh]
+                            new_rxn_d.extend([alt_rxns[i] for i in mn_keys_alt])
                             new_rxn_d = {i:v for i, v in enumerate(new_rxn_d)}
                             
-                            label = f'alt_rxn-{max(mx_keys_alt)}-coeff_priority(avg_w_cbh)'
+                            label = f'alt_rxn-{max(mn_keys_alt)}-coeff_priority(avg_w_cbh)'
 
                         # if alt_rxn has the lowest total coeff, use cbh protocol
-                        elif mx > max(cbh_totalcoeff.values()):
-                            # do normal protocol if alternative rxns are worse than cbh based on coeff
-                            # Do not follow the coefficient rule between equal rung cbhs to prevent inconsistencies
-                            #   This can be added if a new method for coeff priority is implemented for general procedures
-                            idx = np.where(np.array(cbhs_rungs) == np.array(cbhs_rungs).max())[0].tolist()
+                        elif mn > min(cbh_totalcoeff.values()):
+                            mn = min(cbh_totalcoeff.values())
+                            idx = [i for i, v in cbh_totalcoeff.items() if v == mn]
                             cbhs = [cbhs[i] for i in idx]
                             cbhs_rungs = [cbhs_rungs[i] for i in idx]
                             s_syms = [saturate_syms[i] for i in idx]
@@ -482,14 +479,19 @@ class calcCBH:
                     rung = cbhs[-1].highest_cbh
                 cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
 
-            if len(self.error_messages[s]) == 0:
-                del self.error_messages[s]
-            
-            idx = np.where(np.array(cbhs_rungs) == np.array(cbhs_rungs).max())[0].tolist()
+            # prioritize reactions by total coefficients or by rung number
+            if priority_by_coeff:
+                cbh_totalcoeff = {i : -1 + sum(cbh.cbh_pdts[cbhs_rungs[i]].values()) - sum(cbh.cbh_rcts[cbhs_rungs[i]].values()) for i, cbh in enumerate(cbhs)}
+                mn = min(cbh_totalcoeff.values())
+                idx = [i for i, v in cbh_totalcoeff.items() if v == mn]
+            else:
+                idx = np.where(np.array(cbhs_rungs) == np.array(cbhs_rungs).max())[0].tolist()
+
             cbhs = [cbhs[i] for i in idx]
             cbhs_rungs = [cbhs_rungs[i] for i in idx]
             s_syms = [saturate_syms[i] for i in idx]
             
+            # TODO: Change this system for priority by coeff
             if len(cbhs_rungs) == 1:
                 label = f'CBH-{str(cbhs_rungs[0])}-{s_syms[0]}'
             elif len(cbhs_rungs) > 1:
@@ -500,8 +502,11 @@ class calcCBH:
                     label += sym
                     if i == len(s_syms)-1:
                         label += ')'
-            
+
             Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, cbhs, skip_precursor_check=True, cbh_rungs=cbhs_rungs)
+            
+            if len(self.error_messages[s]) == 0:
+                del self.error_messages[s]
 
             # Choose the best possible method to assign to the energies dataframe
             choose_best_method_and_assign(Hrxn[s], Hf[s], label)
@@ -1043,7 +1048,7 @@ class calcCBH:
                     worse_idxs = np.where(np.array([self.rankings_rev[s] for s in named_sources]) >= rank)[0]
                     decompose_precurs = [list(rxn.keys())[i] for i in worse_idxs] # precursors where the theory is worse than rank and must be decomposed
                     # dictionaries holding a precursor's respective rung rung or saturation atom
-                    d_rung = {precur : int(rxn_sources[i].split('//')[0].split('-')[1]) if len(rxn_sources[i].split('//')) > 1 else 'alt' for i, precur in enumerate(list(rxn.keys()))}
+                    d_rung = {precur : float(rxn_sources[i].split('//')[0].split('-')[1]) if len(rxn_sources[i].split('//')) > 1 else 'alt' for i, precur in enumerate(list(rxn.keys()))}
                     d_sat = {precur : rxn_sources[i].split('//')[0].split('-')[2].replace('avg(', '').replace(')', '').split('+') 
                                 if len(rxn_sources[i].split('//')) > 1 and 'CBH' in rxn_sources[i] else 'alt' for i, precur in enumerate(list(rxn.keys()))}
 
@@ -1067,9 +1072,12 @@ class calcCBH:
                                 rxn = add_dicts(rxn, {k : rxn[precur]*v for k, v in p.cbh_pdts[d_rung[precur]].items()}, {k : -rxn[precur]*v for k, v in p.cbh_rcts[d_rung[precur]].items()})
                                 del rxn[precur]
                             except KeyError:
+                                # TODO: ex. error with CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(C)(F)F
+                                #   This is triggered since its precursor does not exist in the database
+                                #   But maybe we should automatically compute that missing precursor's reactants and pdts
                                 # new precursor does not exist in database
-                                self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. Some reactants of {precur} did not exist in the database.")
-                                self.error_messages[s][-1] += f"\nThere is a possibility that CBH-{test_rung}-{label} of {s} is equivalent to a lower rung, but this cannot be rigorously tested automatically."
+                                self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
+                                self.error_messages[s][-1] += f"\n\tThere is a possibility that CBH-{test_rung}-{label} of {s} \n\tis equivalent to a lower rung, but this cannot be rigorously tested automatically."
                                 verbose_error = True
                                 break
                         else:
@@ -1077,8 +1085,8 @@ class calcCBH:
                                 rxn = add_dicts(rxn, self.alternative_rxn[precur][d_rung[precur]])
                                 del rxn[precur]
                             else:
-                                self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. Some reactants of {precur} did not exist in the database.")
-                                self.error_messages[s][-1] += f"\nThere is a possibility that CBH-{test_rung}-{label} of {s} is equivalent to a lower rung, but this cannot be rigorously tested automatically."
+                                self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
+                                self.error_messages[s][-1] += f"\n\tThere is a possibility that CBH-{test_rung}-{label} of {s} \n\tis equivalent to a lower rung, but this cannot be rigorously tested automatically."
                                 verbose_error = True
                                 break
                     
@@ -1147,18 +1155,20 @@ class calcCBH:
             :rung:                 [int] Rung at given or equivalent rung
         """
         if verbose_error:
-            self.error_messages[s][-1] += "\n\tReaction dictionaries hold the target species' precursors and respective coefficients where negatives imply reactants and positives are products."
+            self.error_messages[s][-1] += "\n\tReaction dictionaries hold the target species' precursors and respective coefficients \n\twhere negatives imply reactants and positives are products."
             self.error_messages[s][-1] += f"\n\tBelow is the partially decomposed reaction: \n\t{precur_rxn}"
-            self.error_messages[s][-1] += f"\n\tThe decomposed reaction will be subtracted from each CBH rung. For equivalency, all coefficients must be 0 which would yield an emtpy dictionary."
+            self.error_messages[s][-1] += f"\n\tThe decomposed reaction will be subtracted from each CBH rung. \n\tFor equivalency, all coefficients must be 0 which would yield an emtpy dictionary."
 
         for r in reversed(range(top_rung)): # excludes top_rung
             new_cbh_pdts = {k : -v for k, v in cbh_pdts[r].items()}
             total_prec = add_dicts(new_cbh_pdts, cbh_rcts[r], precur_rxn)
             if verbose_error:
-                self.error_messages[s][-1] += f"\n\tSubtracted from CBH-{r}: {total_prec}"
+                self.error_messages[s][-1] += f"\n\tSubtracted from CBH-{r}: \n\t{total_prec}"
             
-            if not total_prec:
-                # empty dict will return False
+            if not total_prec: # empty dict will return False
+                if verbose_error and 'Subtracted from' in self.error_messages[s][-1]:
+                    # this deletes the verbose nature of the error message since it already prints that the reaction is equivalent to a lower rung
+                    del self.error_messages[s][-1]
                 return True, r
 
         return False, top_rung
@@ -1364,33 +1374,3 @@ class calcCBH:
             
             self.energies.to_pickle(file_path)
             print(f'Saved to: {file_path}')
-
-
-
-def flatten(ls:list):
-    """
-    Flattens lists of lists when there are strings present in the outer list.
-    From:
-    https://stackoverflow.com/questions/5286541/
-
-    ARGUMENTS
-    ---------
-    :ls:    [list]
-
-    RETURNS
-    -------
-    [generator] flattened list as a generator obj
-    """
-    for l in ls:
-        if hasattr(l, '__iter__') and not isinstance(l, str):
-            for m in flatten(l):
-                yield m
-        else:
-            yield l
-
-
-if __name__ == '__main__':
-    c = calcCBH(['CC(F)(F)(F)', 'CC(F)(F)C', 'CC(F)(F)C(F)(F)(F)', 'C(F)(F)(F)C(F)(F)C(F)(F)(F)',
-    'CC(F)(F)C(F)(F)C', 'CC(F)(F)C(F)(F)C(F)(F)(F)', 'C(F)(F)(F)C(F)(F)C(F)(F)C(F)(F)(F)'])
-    c.calc_Hf()
-
