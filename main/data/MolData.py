@@ -242,6 +242,44 @@ def generate_alternative_rxn_file(folder_path:str, save_file:str=None):
     return alternative_rxn
 
 
+def add_alternative_rxns_to_database(alternative_rxn_file:str, database_folder:str):
+    """
+    Add reactions from alternative_rxn_file to their respective molecule files
+    in the given folder.
+    THIS WILL OVERWRITE ANY EXISTING REACTIONS IN THE MOLECULE FILE.
+
+    ARGUMENTS
+    ---------
+    :alternative_rxn_file:  [str] path to the alternative_rxn_file
+    :database_folder:       [str] path to the database folder
+
+    RETURNS
+    -------
+    None
+    """
+
+    with open('data/alternative_rxn.yaml', 'r') as f:
+        alternative_rxns = yaml.safe_load(f)
+    for alt in alternative_rxns:
+        alt = Chem.CanonSmiles(alt)
+        mol_file = os.path.join(database_folder, alt+'.yaml')
+        if os.path.isfile(mol_file):
+            with open(mol_file, 'r') as f:
+                mol = yaml.safe_load(f)
+            if False in [isinstance(rank, (int, float)) for rank in alternative_rxns[alt]]:
+                raise TypeError('CBH rank must be a number')
+            for rank in alternative_rxns[alt]:
+                if 'alternative_rxn' not in mol:
+                    mol['alternative_rxn'] = {}
+                # overwrite any existing reactions
+                mol['alternative_rxn'][rank] = {Chem.CanonSmiles(smiles) : coeff for smiles, coeff in alternative_rxns[alt][rank].items()}
+            
+            with open(mol_file,'w') as f:
+                yaml.dump(mol, f, default_flow_style=False)
+        else:
+            raise FileNotFoundError(f'File for molecule {alt} not found in database folder. File name must be RDKit canonical SMILES of molecule.')
+            
+
 def load_rankings(file=''):
     """
     Load Ranking file for different levels of theory.
