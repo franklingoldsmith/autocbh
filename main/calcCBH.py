@@ -44,7 +44,8 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, methods: list=[], force_generate_database:bool=False, force_generate_alternative_rxn:bool=False, dataframe_path:str=None):
+    def __init__(self, methods: list=[], force_generate_database:bool=False, force_generate_alternative_rxn:bool=False, 
+                        dataframe_path:str=None, alternative_rxn_path:str=None):
         """
         ARGUMENTS
         ---------
@@ -149,10 +150,13 @@ class calcCBH:
         #   - force use alternative_rxn no matter what
         #   - let software decide (based on better rung (or less reactants?) if same then weight)
 
-        if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn:
+        if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn and not alternative_rxn_path:
             generate_alternative_rxn_file('data/molecule_data', 'alternative_rxn')
 
-        with open('data/alternative_rxn.yaml', 'r') as f:
+        if not alternative_rxn_path:
+            alternative_rxn_path = 'data/alternative_rxn.yaml'
+
+        with open(alternative_rxn_path, 'r') as f:
             self.alternative_rxn = yaml.safe_load(f)
         
         self.error_messages = {}
@@ -916,21 +920,15 @@ class calcCBH:
         -------
         :weights:   [list] list of weights (sum=1)
         """
-        
+        weights = np.zeros((len(Hrxn)))
+
         # if Hrxn is 0 for any species, return one-hot encoding
         if 0 in list(Hrxn):
             Hrxn = np.array(list(Hrxn))
             ind = np.where(Hrxn==0)[0]
 
-            if len(ind) == 1:
-                weights = np.zeros((len(Hrxn)))
-                weights[ind[0]] = 1
-                return weights.tolist()
-
-            elif len(ind) > 1:
-                weights = np.zeros((len(Hrxn)))
-                weights[ind] = 1 / len(ind)
-                return weights.tolist()
+            weights[ind] = 1 / len(ind)
+            return weights.tolist()
         
         # more common case where Hrxn is not exactly 0
         denom = 0
@@ -938,12 +936,11 @@ class calcCBH:
         for h in Hrxn:
             denom += (1/abs(h))
 
-        weights = []
         # calculate weights
-        for h in Hrxn:
-            weights.append(1/abs(h) / denom)
+        for i, h in enumerate(Hrxn):
+            weights[i] = 1/abs(h) / denom
 
-        return weights
+        return weights.tolist()
 
     
     def check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str): 
