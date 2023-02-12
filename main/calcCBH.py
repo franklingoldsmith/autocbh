@@ -357,6 +357,8 @@ class calcCBH:
 
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
+                        if s=='CC(O)(F)F':
+                            self.energies.loc[s, 'DfH'] = -712.1-0.04029985839758865
                         continue
                     
                 ##### prioritize by user defined rung numbers #####
@@ -404,7 +406,7 @@ class calcCBH:
                                 if i > 0:
                                     label += ', '
                                 label += str(cbhs_rungs[i]) + '-' + sym
-                            label += f'{best_alt}-alt)'
+                            label += f', {best_alt}-alt)'
                             
                             choose_best_method_and_assign(Hrxn[s], Hf[s], label)
 
@@ -654,7 +656,6 @@ class calcCBH:
         Hrxn = {'ref':delE['DfH']}
         Hrxn = {**Hrxn, **dict(zip(self.methods, np.full(len(self.methods), nan)))}
 
-        # TODO: How to choose what functions to include
         # in most cases, it is just summing the values in method_keys for a given method
         for rank, m_list in self.rankings.items():
             # This is assuming rank=1 is experimental and already measures Hf
@@ -666,7 +667,6 @@ class calcCBH:
                 elif 0 not in self.energies.loc[rxn[s].keys(), self.methods_keys_dict[m]].values:
                     Hrxn[m] = sum_Hrxn(delE, *self.methods_keys_dict[m])
         
-        # Hf
         Hf = {k:v - Hrxn['ref'] for k,v in Hrxn.items()}
 
         return Hrxn, Hf
@@ -752,6 +752,77 @@ class calcCBH:
                 weighted_Hf[k] = sum([weights[k][i]*Hf_s[k] for i, Hf_s in enumerate(Hf_ls)])
             
         return weighted_Hrxn, weighted_Hf
+
+
+    def calc_Hf_from_source(self, s:str, source_str:str=None, inplace=False):
+        """
+        Calculate Hrxn and Hf of a species, s, from the 'source' column in 
+        self.energies or a provided source_str. Primarily used for 
+        Uncertainty Quantification.
+
+        ASSUMES ALL REACTANTS RELATED TO THE SOURCE EXIST
+
+        ARGUMENTS
+        ---------
+        :s:             [str] SMILES string of the target species.
+
+        :source_str:    [str] (optional, default=None) string for 
+                            CBH/alternative rung to use.
+            ex) 'CBH-#-S' 
+                (where # is an int/float of the rung and S is the saturation
+                    atom or "alt" for alternative reaction)
+            ex) 'CBHavg-(#-S, #-S, ...)'
+                (average of different rungs, includes alternative rxns)
+
+        :inplace:       [bool] (default=False) 
+                    If True: save directly to self.energies
+                    If False: return the tuple.
+        
+        RETURNS
+        -------
+        if inplace = False:
+            (weighted_Hrxn, weighted_Hf)
+        else:
+            None, saves directly to self.energies
+        """
+
+        if source_str is None:
+            source_str = self.energies.loc[s, 'source']
+
+        rungs = []
+        sats = []
+        if 'CBH' in source_str:
+            if 'avg' in source_str.split('//')[0]:
+                # ex. CBHavg-(#-S, #-S, #-alt)
+                rungs += [float(sub.split('-')[0]) for sub in source_str.split('//')[0][8:-1].split(', ')]
+                sats += [sub.split('-')[1] for sub in source_str.split('//')[0][8:-1].split(', ')]
+            else:
+                # ex. CBH-#-S
+                rungs += [float(source_str.split('//')[0].split('-')[1])]
+                sats += [source_str.split('//')[0].split('-')[2]]
+            
+            methods = source_str.split('//')[1].split('+')
+        else:
+            # if not from CBH rung --> experimental
+            methods = source_str.split('+')
+
+        rxns = {}
+        for i, sat in enumerate(sats):
+            if sat != 'alt':
+                cbh = CBH.buildCBH(s, sat, allow_overshoot=True)
+                rxns[i] = self.cbh_to_rxn(s, cbh, rungs[i])
+            else:
+                rxns[i] = {s: copy(self.alternative_rxn[s][rungs[i]])}
+                rxns[i][s].update({s:-1})
+        
+        weighted_Hrxn, weighted_Hf = self._weighting_scheme_Hf(s, rxns, skip_precursor_check=True)
+        weighted_Hrxn, weighted_Hf, _ = self.choose_best_method(weighted_Hrxn, weighted_Hf, '')
+
+        if not inplace:
+            return weighted_Hrxn, weighted_Hf
+        else:
+            self.energies.loc[s, 'DfH'] = weighted_Hf
+            self.energies.loc[s, 'DrxnH'] = weighted_Hrxn
 
 
     def calc_Hf_allrungs(self, s: str, saturate: int or str=1) -> tuple:
@@ -1409,3 +1480,4 @@ class calcCBH:
             
             self.energies.to_pickle(file_path)
             print(f'Saved to: {file_path}')
+        
