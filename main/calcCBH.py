@@ -357,8 +357,8 @@ class calcCBH:
 
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
-                        if s=='CC(O)(F)F':
-                            self.energies.loc[s, 'DfH'] = -712.1-0.04029985839758865
+                        # if s=='CC(O)(F)F':
+                        #     self.energies.loc[s, 'DfH'] = -712.1-0.04029985839758865
                         continue
                     
                 ##### prioritize by user defined rung numbers #####
@@ -645,9 +645,12 @@ class calcCBH:
         nrg_cols.extend(self.methods_keys)
 
         # heat of rxn
-        coeff_arr = pd.DataFrame(rxn).T.sort_index(axis=1).values * -1 # products are negative, and reactants are positive
-        nrg_arr = self.energies.loc[list(rxn[s].keys()), nrg_cols].sort_index().values
-        matrix_mult = np.matmul(coeff_arr, nrg_arr)
+        rxn_key_order = list(rxn[s].keys())
+        coeff_vec = np.array(list(rxn[s].values())) * -1 # products are negative, and reactants are positive
+        nrg_arr = self.energies.loc[rxn_key_order, nrg_cols].values
+        
+        matrix_mult = np.matmul(coeff_vec, nrg_arr)
+
         delE = {nrg_cols[i]:matrix_mult[0][i] for i in range(len(nrg_cols))}
         # Subtract off DfH from the energies column in case it is not 0
         # we must assert that the DfH is not computed for the target species
