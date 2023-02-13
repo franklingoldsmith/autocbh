@@ -651,7 +651,7 @@ class calcCBH:
         
         matrix_mult = np.matmul(coeff_vec, nrg_arr)
 
-        delE = {nrg_cols[i]:matrix_mult[0][i] for i in range(len(nrg_cols))}
+        delE = {nrg_cols[i]:matrix_mult[i] for i in range(len(nrg_cols))}
         # Subtract off DfH from the energies column in case it is not 0
         # we must assert that the DfH is not computed for the target species
         delE['DfH'] = delE['DfH'] - self.energies.loc[s, 'DfH']
@@ -826,6 +826,139 @@ class calcCBH:
         else:
             self.energies.loc[s, 'DfH'] = weighted_Hf
             self.energies.loc[s, 'DrxnH'] = weighted_Hrxn
+
+    
+    def calc_Hf_from_source_vectorized(self, s:str, DfH_UQ_array:np.array, DfH_UQ_index:pd.Index, source_str:str=None):
+        """
+        Calculate Hrxn and Hf of a species, s, from the 'source' column in 
+        self.energies or a provided source_str. Primarily used for 
+        UQ.uncertainty_quantification.
+
+        ASSUMES ALL REACTANTS RELATED TO THE SOURCE EXIST
+
+        ARGUMENTS
+        ---------
+        :s:             [str] SMILES string of the target species.
+
+        :DfH_UQ_array:  [np.array] shape=(num_species, num_simulations)
+            2D array holding the sampled DfH values for each species.
+        
+        :DfH_UQ_index:  [pd.Index] list of species names corresponding to the rows 
+                            of DfH_UQ_array.
+
+        :source_str:    [str] (optional, default=None) 
+            String for CBH/alternative rung to use.
+            ex) 'CBH-#-S' 
+                (where # is an int/float of the rung and S is the saturation
+                    atom or "alt" for alternative reaction)
+            ex) 'CBHavg-(#-S, #-S, ...)'
+                (average of different rungs, includes alternative rxns)
+        
+        RETURNS
+        -------
+        (weighted_Hrxn, weighted_Hf)
+
+        :weighted_Hrxn: [float] Weighted heat of reaction based on qchem values.
+
+        :weghted_Hf:    [1D np.array] shape=(1, num_simulations)
+            Heat of formation for each simulation. num_simulations corresponds to 
+            second dimention of DfH_UQ_array.
+        """
+
+        if source_str is None:
+            source_str = self.energies.loc[s, 'source']
+
+        rungs = []
+        sats = []
+        if 'CBH' in source_str:
+            if 'avg' in source_str.split('//')[0]:
+                # ex. CBHavg-(#-S, #-S, #-alt)
+                rungs += [float(sub.split('-')[0]) for sub in source_str.split('//')[0][8:-1].split(', ')]
+                sats += [sub.split('-')[1] for sub in source_str.split('//')[0][8:-1].split(', ')]
+            else:
+                # ex. CBH-#-S
+                rungs += [float(source_str.split('//')[0].split('-')[1])]
+                sats += [source_str.split('//')[0].split('-')[2]]
+            
+            methods = source_str.split('//')[1].split('+')
+        else:
+            # if not from CBH rung --> experimental
+            methods = source_str.split('+')
+
+        rxns = {}
+        for i, sat in enumerate(sats):
+            if sat != 'alt':
+                cbh = CBH.buildCBH(s, sat, allow_overshoot=True)
+                rxns[i] = self.cbh_to_rxn(s, cbh, rungs[i])
+            else:
+                rxns[i] = {s: copy(self.alternative_rxn[s][rungs[i]])}
+                rxns[i][s].update({s:-1})
+        
+        nrg_cols = ['DfH']
+        for method in methods:
+            nrg_cols.extend(self.methods_keys_dict[method])
+
+        Hrxn = {}
+        Hf = {}
+        for r, rxn in rxns.items():
+            # heat of rxn
+            rxn_species = list(rxn[s].keys())
+            species_ind_for_df = DfH_UQ_index.get_indexer(rxn_species)
+
+            coeff_vec = np.array(list(rxn[s].values())) * -1 # products are negative, and reactants are positive
+            nrg_arr = self.energies.loc[rxn_species, nrg_cols].values
+            matrix_mult = np.matmul(coeff_vec, nrg_arr) # for Hrxn
+
+            DfH_all_simulations = coeff_vec @ DfH_UQ_array[species_ind_for_df,:] # - self.energies.loc[s, 'DfH']
+
+            delE = {nrg_cols[i]:matrix_mult[i] for i in range(len(nrg_cols))}
+            Hrxn[r] = {**dict(zip(methods, np.full(len(methods), nan)))}
+            Hf[r] = np.tile(DfH_all_simulations*-1, (len(methods), 1))
+
+            # in most cases, it is just summing the values in method_keys for a given method
+            for m, method in enumerate(methods):
+                rank = self.rankings_rev[method]
+                # This is assuming rank=1 is experimental and already measures Hf
+                if rank == 0 or rank == 1:
+                    continue
+                elif method == 'anl0' and True not in self.energies.loc[rxn[s].keys(), ['avqz', 'av5z', 'zpe']].isna():
+                    Hrxn[r]['anl0'] = anl0_hrxn(delE)
+                elif 0 not in self.energies.loc[rxn[s].keys(), self.methods_keys_dict[method]].values:
+                    Hrxn[r][method] = sum_Hrxn(delE, *self.methods_keys_dict[method])
+
+                Hf[r][m, :] += Hrxn[r][method]
+        
+        # Hrxn =    {rxn : {method : DrxnH}}
+        # weights = {method : [weights in order of rxn]}
+        # Hf =      {rxn : 2D array (num_methods, num_simulations)}
+
+        weights = {}
+        # 1. get weights for each rxn 
+        for method in methods:
+            weights[method] = self._weight(*[Hrxn[r][method] for r in Hrxn.keys()])
+
+        # 2. apply weights to get Hrxn = {method : avg DrxnH} and Hf
+        weighted_Hrxn = {}
+        for m, method in enumerate(methods):
+            weighted_Hrxn[method] = sum([weights[method][r]*abs(Hrxn[r][method]) for r in Hrxn.keys()])
+            for r in Hf.keys():
+                Hf[r][m,:] = weights[method][r] * Hf[r][m,:]
+
+        weighted_Hf = np.zeros(Hf[r].shape)
+        for r in Hf.keys():
+            weighted_Hf += Hf[r]
+
+        # 3. get weights for each method
+        weights = self._weight(*[v for v in weighted_Hrxn.values()])
+
+        # 4. apply weights to get Hrxn and Hf
+        for i, w in enumerate(weights):
+            weighted_Hf[i,:] = w * weighted_Hf[i,:]
+        
+        weighted_Hrxn = sum([weights[i]*weighted_Hrxn[method] for i, w in enumerate(list(weighted_Hrxn.keys()))])
+        weighted_Hf = np.sum(weighted_Hf, axis=0)
+        
+        return weighted_Hrxn, weighted_Hf
 
 
     def calc_Hf_allrungs(self, s: str, saturate: int or str=1) -> tuple:
