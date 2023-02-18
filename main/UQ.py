@@ -2,11 +2,12 @@ import numpy as np
 import pandas as pd
 from calcCBH import calcCBH
 import CBH
-import sys
+import os, sys
 sys.path.append('.')
 from rdkit.Chem import MolFromSmiles, AddHs
 from copy import copy
 from tqdm import tqdm
+from itertools import product
 
 class uncertainty_quantification:
     """
@@ -102,6 +103,12 @@ class uncertainty_quantification:
                     force_generate_database:bool=False, 
                     force_generate_alternative_rxn:bool=False):
         
+        self.methods = methods
+        self.dataframe_path = dataframe_path
+        self.alternative_rxn_path = alternative_rxn_path
+        self.force_generate_database = force_generate_database
+        self.force_generate_alternative_rxn = force_generate_alternative_rxn
+
         self.num_simulations = num_simulations
         self.saturate = saturate
         self.priority_by_coeff = priority_by_coeff
@@ -146,6 +153,9 @@ class uncertainty_quantification:
         RETURNS
         -------
         None - results found in self.simulation_results attribute
+
+            :self.simulation_results: [np.array] Heats of formation
+                        shape = (num_species x num_simulations)
         """
         self.simulation_results = np.zeros((len(self.calcCBH.energies.index.values), self.num_simulations + 1)) # extra for the mean
 
@@ -202,3 +212,95 @@ class uncertainty_quantification:
             self.simulation_results[i+1,:] = self.calcCBH.energies.loc[:, 'DfH'].values
         
         self.simulation_results = self.simulation_results.T
+    
+
+    def run_cbh_selection(self, alt_rxn_option:list=None, priority_by_coeff:bool=None):
+        """
+        UQ of different CBH selection options across randomly sampled initial 
+        heats of formation for experimental species.
+
+        ARGUMENTS
+        ---------
+        :alt_rxn_option:    [list] (default = None) 
+                A list of strings specifying the type of options to include.
+                Options: 'ignore', 'best_alt','avg_alt', 'include'
+                None will automatically include all four options.
+        
+        :priority_by_coeff: [bool] (default = None)
+                Whether to prioritize CBH schema by coefficients or rung number.
+                None will automatically use both True and False cases.
+                
+        RETURNS
+        -------
+        None --> will alter self.simulation_results in-place
+
+            :self.simulation_results: [np.array] Heats of formation
+                shape = (alt_rxn_combinations, num_species, num_simulations)
+        """
+
+        if not isinstance(alt_rxn_option, (list, None)):
+            raise TypeError(f'Arg "alt_rxn_option" must either of type List or NoneType. Instead, {type(alt_rxn_option)} was given.')
+        alt_rxn_option_list_check = ['ignore', 'best_alt','avg_alt', 'include']
+        for option in alt_option:
+            if option:
+                if type(option)!= str:
+                    raise TypeError('List items within "alt_rxn_option" must be a str. If str, the options are: "ignore", "best_alt", "avg_alt", "include".')
+                elif option not in alt_rxn_option_list_check:
+                    raise NameError('The available options for items within "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
+
+        if alt_rxn_option is None:
+            alt_rxn_option_list = ['ignore', 'best_alt', 'avg_alt', 'include']
+        else:
+            alt_rxn_option_list = alt_rxn_option
+        
+        if priority_by_coeff is None:
+            priority_by_coeff = [True, False]
+        else:
+            priority_by_coeff = [priority_by_coeff]
+
+        alt_rxn_option_list_for_pdt = alt_rxn_option_list[:] # copy
+        if 'best_alt' in alt_rxn_option_list:
+            alt_rxn_option_list_for_pdt.remove('best_alt')
+        if 'avg_alt' in alt_rxn_option_list:
+            alt_rxn_option_list_for_pdt.remove('avg_alt')
+        
+        combos = list(product(alt_rxn_option_list_for_pdt, priority_by_coeff))
+        if 'best_alt' in alt_rxn_option_list:
+            combos.extend([('best_alt', False)])
+        if 'avg_alt' in alt_rxn_option_list:
+            combos.extend([('avg_alt', False)])
+
+        # sort criteria
+        simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
+        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
+
+        self.simulation_results = np.zeros((len(combos), len(self.calcCBH.energies.index.values), self.num_simulations + 1))
+
+        self.simulation_results[:, self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
+        for c, combo in tqdm(enumerate(combos)):
+            alt_option, coeff_priority = combo
+            with HiddenPrints():
+                self.calcCBH.calc_Hf(self.saturate, priority_by_coeff=coeff_priority, max_rung=self.max_rung, alt_rxn_option=alt_option)
+
+            self.simulation_results[c, :, 0] = self.calcCBH.energies.loc[:, 'DfH'].values
+
+            # cycle through molecules from smallest to largest
+            for s in sorted_species:
+                i_s = self.calcCBH.energies.index.get_loc(s)
+                weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[c, :, 1:], self.calcCBH.energies.index)
+
+                self.simulation_results[c, i_s, 1:] = weighted_Hf
+
+
+class HiddenPrints:
+    """
+    Mute any print statements.
+    https://stackoverflow.com/questions/8391411/
+    """
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
