@@ -139,17 +139,6 @@ class calcCBH:
                 # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
                 # 'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo']] = nan
 
-        # TODO: Alternative rxns
-        # 1. check whether species exist
-        # 2. if precurors don't exist, error message and delete reaction
-        # 3. if exists then make it take priority over other possible reactions
-        # 4. still compute other cbh rungs, and say in error messages that there are potential other reactions that are better
-        #   - if better rung
-        #   - if number of total species in reaction is less in another rung
-        # I want options
-        #   - force use alternative_rxn no matter what
-        #   - let software decide (based on better rung (or less reactants?) if same then weight)
-
         if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn and not alternative_rxn_path:
             generate_alternative_rxn_file('data/molecule_data', 'alternative_rxn')
 
@@ -435,7 +424,7 @@ class calcCBH:
                     alt_rxn_keys = list(self.alternative_rxn[s].keys())
                     alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
-                        rank_totalcoeff = {rank : sum(alt_rxns[rank][s].values()) for rank in alt_rxns}
+                        rank_totalcoeff = {rank : sum(map(abs, alt_rxns[rank][s].values())) for rank in alt_rxns}
                         mn = min(rank_totalcoeff.values())
                         mn_keys_alt = [k for k, v in rank_totalcoeff.items() if v == mn]
 
@@ -536,7 +525,6 @@ class calcCBH:
             cbhs_rungs = [cbhs_rungs[i] for i in idx]
             s_syms = [saturate_syms[i] for i in idx]
             
-            # TODO: Change this system for priority by coeff
             if len(cbhs_rungs) == 1:
                 label = f'CBH-{str(cbhs_rungs[0])}-{s_syms[0]}'
             elif len(cbhs_rungs) > 1:
@@ -1245,7 +1233,6 @@ class calcCBH:
             #   2b. Get list of unique theories for each of the precursors
             if False not in [type(s)==str for s in sources]:
                 new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s and len(s.split('//'))>1 else s for s in sources]
-                # new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s or 'alt_rxn' in s and len(s.split('//'))>1 else s for s in sources]
                 source_rank = list([self.rankings_rev[source] for source in new_sources])
             else: # if a species Hf hasn't been computed yet, its source will be type==float, so move down a rung
                 # This will appropriately trigger for overshooting cases
@@ -1255,14 +1242,14 @@ class calcCBH:
             # reaction dictionary
             rxn = add_dicts(cbh_pdts[rung], {k : -v for k, v in cbh_rcts[rung].items()}) 
 
-            # 3. If the ranks are homoegenous, decompose precursors until all are of better rank than the target
+            # 3. If the ranks are homogeneous, decompose precursors until all are of better rank than the target
+            # if len(set(source_rank))==1 and max(source_rank) == rank and max(source_rank) != 1:
+            #     test_rung -= 1
+            #     continue
             if len(set(source_rank))==1 and max(source_rank) >= rank and max(source_rank) != 1:
                 verbose_error = False
-                while max(source_rank) >= rank:
-                    # if the worst source_rank is experimental we can break
-                    if max(source_rank) == 1:
-                        break
-                    elif max(source_rank) > rank:
+                while max(source_rank) >= rank:                    
+                    if max(source_rank) > rank:
                         # This leaves potential to get better numbers for the precursors with larger ranks.
                         err_precur = list(compress(all_precursors, [r > rank for r in source_rank]))
                         missing_precursors = self._missing_precursor_str(err_precur)
