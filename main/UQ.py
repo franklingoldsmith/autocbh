@@ -238,15 +238,16 @@ class uncertainty_quantification:
                 shape = (alt_rxn_combinations, num_species, num_simulations)
         """
 
-        if not isinstance(alt_rxn_option, (list, None)):
+        if not isinstance(alt_rxn_option, (list, type(None))):
             raise TypeError(f'Arg "alt_rxn_option" must either of type List or NoneType. Instead, {type(alt_rxn_option)} was given.')
         alt_rxn_option_list_check = ['ignore', 'best_alt','avg_alt', 'include']
-        for option in alt_option:
-            if option:
-                if type(option)!= str:
-                    raise TypeError('List items within "alt_rxn_option" must be a str. If str, the options are: "ignore", "best_alt", "avg_alt", "include".')
-                elif option not in alt_rxn_option_list_check:
-                    raise NameError('The available options for items within "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
+        if alt_rxn_option is not None:
+            for option in alt_rxn_option:
+                if option:
+                    if type(option)!= str:
+                        raise TypeError('List items within "alt_rxn_option" must be a str. If str, the options are: "ignore", "best_alt", "avg_alt", "include".')
+                    elif option not in alt_rxn_option_list_check:
+                        raise NameError('The available options for items within "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
 
         if alt_rxn_option is None:
             alt_rxn_option_list = ['ignore', 'best_alt', 'avg_alt', 'include']
@@ -266,9 +267,9 @@ class uncertainty_quantification:
         
         combos = list(product(alt_rxn_option_list_for_pdt, priority_by_coeff))
         if 'best_alt' in alt_rxn_option_list:
-            combos.extend([('best_alt', False)])
+            combos.extend([('best_alt', True)])
         if 'avg_alt' in alt_rxn_option_list:
-            combos.extend([('avg_alt', False)])
+            combos.extend([('avg_alt', True)])
 
         # sort criteria
         simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
@@ -283,13 +284,60 @@ class uncertainty_quantification:
                 self.calcCBH.calc_Hf(self.saturate, priority_by_coeff=coeff_priority, max_rung=self.max_rung, alt_rxn_option=alt_option)
 
             self.simulation_results[c, :, 0] = self.calcCBH.energies.loc[:, 'DfH'].values
-
             # cycle through molecules from smallest to largest
             for s in sorted_species:
                 i_s = self.calcCBH.energies.index.get_loc(s)
                 weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[c, :, 1:], self.calcCBH.energies.index)
 
                 self.simulation_results[c, i_s, 1:] = weighted_Hf
+            self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
+
+        return combos
+
+
+    def run_cbh_sat(self, sat_list:list, alt_rxn_option:str='include', priority_by_coeff:bool=True):
+        """
+        UQ for different saturation strategies. Automatically tries the values
+        within the list individually and the average.
+        """
+        alt_rxn_option_list_check = ['ignore', 'best_alt','avg_alt', 'include']
+        if alt_rxn_option:
+            if type(alt_rxn_option)!= str:
+                raise TypeError('Arg "alt_rxn_option" must be a str. The options are: "ignore", "best_alt", "avg_alt", "include".')
+            elif alt_rxn_option not in alt_rxn_option_list_check:
+                raise NameError('The available options for "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
+        
+        if not isinstance(priority_by_coeff, bool):
+            raise TypeError(f'Arg "Priority_by_coeff" type must be bool. Instead, {type(priority_by_coeff)} was given.')
+
+        if not isinstance(sat_list, list):
+            raise TypeError(f'Arg "sat_list" type must be list. Instead, {type(sat_list)} was given.')
+
+        sats = [[sat] for sat in sat_list]
+        sats.append(sat_list)
+
+        simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
+        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
+
+        self.simulation_results = np.zeros((len(sats), len(self.calcCBH.energies.index.values), self.num_simulations + 1))
+
+        self.simulation_results[:, self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
+        for sat_i, sat in tqdm(enumerate(sats)):
+            with HiddenPrints():
+                self.calcCBH.calc_Hf(sat, priority_by_coeff=priority_by_coeff, max_rung=self.max_rung, alt_rxn_option=alt_rxn_option)
+
+            self.simulation_results[sat_i, :, 0] = self.calcCBH.energies.loc[:, 'DfH'].values
+
+            # cycle through molecules from smallest to largest
+            for s in sorted_species:
+                i_s = self.calcCBH.energies.index.get_loc(s)
+                weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[sat_i, :, 1:], self.calcCBH.energies.index)
+
+                self.simulation_results[sat_i, i_s, 1:] = weighted_Hf
+            
+            self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
+
+        return sats
 
 
 class HiddenPrints:
