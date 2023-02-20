@@ -47,12 +47,31 @@ class uncertainty_quantification:
         saturate precursor  species. String representations of the elements also 
         works. 
 
-    :priority_by_coeff: [bool] (default=False)
-        Choose to prioritize CBH rungs based on the total number of reactants in 
-        the reaction. If True, the CBH rung with the least number of reactants 
-        will be used. If False, the highest rung number will by prioritized. 
-        If alt_rxn_option is "priority", then it will also take alternative 
-        reactions into account.
+    :priority:      [str] (default="abs_coeff")
+                    Rung selection criteria.
+        - "abs_coeff" 
+            The reaction with the minimum number of total precursors will be 
+            prioritized. If there are multiple reactions with the same number, 
+            they will be averaged.
+            
+        - "rel_coeff"
+            The reaction with the smallest sum of reaction coefficients will be 
+            prioritized. Reactants have negative contribution and products have 
+            positive contribution.
+            
+            Note: In most/all cases, all reactions sum to 0. This means that 
+            the highest possible rungs for all saturation schemes and alternative
+            reactions will be averaged.
+
+        - "rung"
+            The reaction will the prioritized by the highest rung number of a given
+            CBH scheme. If there are multiple reactions with the same number,
+            they will be averaged.
+            
+        e.g.) CBH-1-H: CH3CF2CH3 + 3 CH4 --> 2 C2H6 + 2 CH3F
+        "abs_coeff":    val = 7
+        "rel_coeff":    val = 0
+        "rung":         val = 1
 
     :max_rung:      [int] (default=None) 
         Max CBH rung allowed for Hf calculation
@@ -97,7 +116,7 @@ class uncertainty_quantification:
                     dataframe_path:str=None, 
                     alternative_rxn_path:str=None, 
                     saturate:list=[1,9], 
-                    priority_by_coeff:bool=False, 
+                    priority:str="abs_coeff", 
                     max_rung:int=None, 
                     alt_rxn_option:str=None, 
                     force_generate_database:bool=False, 
@@ -111,7 +130,7 @@ class uncertainty_quantification:
 
         self.num_simulations = num_simulations
         self.saturate = saturate
-        self.priority_by_coeff = priority_by_coeff
+        self.priority = priority
         self.max_rung = max_rung
         self.alt_rxn_option = alt_rxn_option
         
@@ -159,7 +178,7 @@ class uncertainty_quantification:
         """
         self.simulation_results = np.zeros((len(self.calcCBH.energies.index.values), self.num_simulations + 1)) # extra for the mean
 
-        self.calcCBH.calc_Hf(self.saturate, self.priority_by_coeff, self.max_rung, self.alt_rxn_option)
+        self.calcCBH.calc_Hf(self.saturate, self.priority, self.max_rung, self.alt_rxn_option)
         self.simulation_results[:, 0] = self.calcCBH.energies.loc[:, 'DfH'].values
 
         self.simulation_results[self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
@@ -194,7 +213,7 @@ class uncertainty_quantification:
 
         self.simulation_results = np.zeros((self.num_simulations + 1, len(self.calcCBH.energies.index.values))) # extra for the mean
 
-        self.calcCBH.calc_Hf(self.saturate, self.priority_by_coeff, self.max_rung, self.alt_rxn_option)
+        self.calcCBH.calc_Hf(self.saturate, self.priority, self.max_rung, self.alt_rxn_option)
         self.simulation_results[0,:] = self.calcCBH.energies.loc[:, 'DfH'].values
 
         # sort criteria
@@ -214,7 +233,7 @@ class uncertainty_quantification:
         self.simulation_results = self.simulation_results.T
     
 
-    def run_cbh_selection(self, alt_rxn_option:list=None, priority_by_coeff:bool=None):
+    def run_cbh_selection(self, alt_rxn_option:list=None, priority:list=None):
         """
         UQ of different CBH selection options across randomly sampled initial 
         heats of formation for experimental species.
@@ -226,9 +245,10 @@ class uncertainty_quantification:
                 Options: 'ignore', 'best_alt','avg_alt', 'include'
                 None will automatically include all four options.
         
-        :priority_by_coeff: [bool] (default = None)
-                Whether to prioritize CBH schema by coefficients or rung number.
-                None will automatically use both True and False cases.
+        :priority:          [list] (default = None)
+                A list of strings specifying how to prioritize reaction schema.
+                Options: 'abs_coeff', 'rel_coeff', 'rung'
+                None will automatically include all three options.
                 
         RETURNS
         -------
@@ -239,7 +259,7 @@ class uncertainty_quantification:
         """
 
         if not isinstance(alt_rxn_option, (list, type(None))):
-            raise TypeError(f'Arg "alt_rxn_option" must either of type List or NoneType. Instead, {type(alt_rxn_option)} was given.')
+            raise TypeError(f'Arg "alt_rxn_option" must either be of type List or NoneType. Instead, {type(alt_rxn_option)} was given.')
         alt_rxn_option_list_check = ['ignore', 'best_alt','avg_alt', 'include']
         if alt_rxn_option is not None:
             for option in alt_rxn_option:
@@ -254,22 +274,19 @@ class uncertainty_quantification:
         else:
             alt_rxn_option_list = alt_rxn_option
         
-        if priority_by_coeff is None:
-            priority_by_coeff = [True, False]
+        if not isinstance(priority, (list, type(None))):
+            raise TypeError(f'Arg "priority" must either be of type List or NoneType. Instead, {type(priority)} was given.')
+        priority_list = ["abs_coeff", "rel_coeff", "rung"]
+        if priority is not None:
+            for p in priority:
+                if not isinstance(p, str):
+                    raise TypeError(f'Arg "priority" must be a str. Instead, {type(p)} was given. The options are: "abs_coeff", "rel_coeff", "rung".')
+                if p not in priority_list:
+                    raise NameError(f'The available options for arg "priority" are: "abs_coeff", "rel_coeff", "rung". {p} was given instead.')
         else:
-            priority_by_coeff = [priority_by_coeff]
-
-        alt_rxn_option_list_for_pdt = alt_rxn_option_list[:] # copy
-        if 'best_alt' in alt_rxn_option_list:
-            alt_rxn_option_list_for_pdt.remove('best_alt')
-        if 'avg_alt' in alt_rxn_option_list:
-            alt_rxn_option_list_for_pdt.remove('avg_alt')
+            priority = ["abs_coeff", "rel_coeff", "rung"]
         
-        combos = list(product(alt_rxn_option_list_for_pdt, priority_by_coeff))
-        if 'best_alt' in alt_rxn_option_list:
-            combos.extend([('best_alt', True)])
-        if 'avg_alt' in alt_rxn_option_list:
-            combos.extend([('avg_alt', True)])
+        combos = list(product(alt_rxn_option_list, priority))
 
         # sort criteria
         simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
@@ -279,9 +296,9 @@ class uncertainty_quantification:
 
         self.simulation_results[:, self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
         for c, combo in tqdm(enumerate(combos)):
-            alt_option, coeff_priority = combo
+            alt_option, p_option = combo
             with HiddenPrints():
-                self.calcCBH.calc_Hf(self.saturate, priority_by_coeff=coeff_priority, max_rung=self.max_rung, alt_rxn_option=alt_option)
+                self.calcCBH.calc_Hf(self.saturate, priority=p_option, max_rung=self.max_rung, alt_rxn_option=alt_option)
 
             self.simulation_results[c, :, 0] = self.calcCBH.energies.loc[:, 'DfH'].values
             # cycle through molecules from smallest to largest
@@ -295,7 +312,7 @@ class uncertainty_quantification:
         return combos
 
 
-    def run_cbh_sat(self, sat_list:list, alt_rxn_option:str='include', priority_by_coeff:bool=True):
+    def run_cbh_sat(self, sat_list:list, alt_rxn_option:str='include', priority:str="abs_coeff"):
         """
         UQ for different saturation strategies. Automatically tries the values
         within the list individually and the average.
@@ -307,8 +324,11 @@ class uncertainty_quantification:
             elif alt_rxn_option not in alt_rxn_option_list_check:
                 raise NameError('The available options for "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
         
-        if not isinstance(priority_by_coeff, bool):
-            raise TypeError(f'Arg "Priority_by_coeff" type must be bool. Instead, {type(priority_by_coeff)} was given.')
+        priority_list = ["abs_coeff", "rel_coeff", "rung"]
+        if not isinstance(priority, str):
+            raise TypeError(f'Arg "priority" must be a str. Instead, {type(priority)} was given. The options are: "abs_coeff", "rel_coeff", "rung".')
+        if priority not in priority_list:
+            raise NameError(f'The available options for arg "priority" are: "abs_coeff", "rel_coeff", "rung". {priority} was given instead.')
 
         if not isinstance(sat_list, list):
             raise TypeError(f'Arg "sat_list" type must be list. Instead, {type(sat_list)} was given.')
@@ -324,7 +344,7 @@ class uncertainty_quantification:
         self.simulation_results[:, self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
         for sat_i, sat in tqdm(enumerate(sats)):
             with HiddenPrints():
-                self.calcCBH.calc_Hf(sat, priority_by_coeff=priority_by_coeff, max_rung=self.max_rung, alt_rxn_option=alt_rxn_option)
+                self.calcCBH.calc_Hf(sat, priority=priority, max_rung=self.max_rung, alt_rxn_option=alt_rxn_option)
 
             self.simulation_results[sat_i, :, 0] = self.calcCBH.energies.loc[:, 'DfH'].values
 
