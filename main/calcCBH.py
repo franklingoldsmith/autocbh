@@ -227,7 +227,7 @@ class calcCBH:
         return dfs
 
 
-    def calc_Hf(self, saturate:list=[1,9], priority_by_coeff:bool=False, max_rung:int=None, alt_rxn_option:str=None):
+    def calc_Hf(self, saturate:list=[1,9], priority:str="abs_coeff", max_rung:int=None, alt_rxn_option:str=None):
         """
         Calculate the heats of formation of species that do not have reference 
         values using the highest possible CBH scheme with the best possible level 
@@ -241,13 +241,32 @@ class calcCBH:
                             species. String representations of the elements 
                             also works. (default=[1,9] for hydrogen and fluorine)
 
-        :priority_by_coeff: [bool] (default=False)
-                            Choose to prioritize CBH rungs based on the total number
-                            of reactants in the reaction. If True, the CBH rung with
-                            the least number of reactants will be used. If False,
-                            the highest rung number will by prioritized.
-                            If alt_rxn_option is "priority", then it will also take 
-                            alternative reactions into account.
+        :priority:      [str] (default="abs_coeff")
+                    Rung selection criteria.
+            - "abs_coeff" 
+                The reaction with the minimum number of total precursors will be 
+                prioritized. If there are multiple reactions with the same number, 
+                they will be averaged.
+                
+            - "rel_coeff"
+                The reaction with the smallest sum of reaction coefficients will be 
+                prioritized. Reactants have negative contribution and products have 
+                positive contribution.
+                
+                Note: In most/all cases, all reactions sum to 0. This means that 
+                the highest possible rungs for all saturation schemes and alternative
+                reactions will be averaged.
+
+            - "rung"
+                The reaction will the prioritized by the highest rung number of a given
+                CBH scheme. If there are multiple reactions with the same number,
+                they will be averaged.
+                
+            e.g.) CBH-1-H: CH3CF2CH3 + 3 CH4 --> 2 C2H6 + 2 CH3F
+            "abs_coeff":    val = 7
+            "rel_coeff":    val = 0
+            "rung":         val = 1
+
 
         :max_rung:      [int] (default=None) Max CBH rung allowed for Hf calculation
 
@@ -264,7 +283,7 @@ class calcCBH:
                         Average all alternative reactions of a species and does not
                         use any default CBH rungs.
 
-                    - "include" (priority) - or maybe "include"?
+                    - "include" (priority)
                         Included alternative reactions and will follow CBH priority 
                         protocol. 
 
@@ -280,6 +299,12 @@ class calcCBH:
                 raise TypeError('Arg "alt_rxn_option" must either be NoneType or str. If str, the options are: "ignore", "best_alt", "avg_alt", "include".')
             elif alt_rxn_option not in alt_rxn_option_list:
                 raise NameError('The available options for arg "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
+        
+        priority_list = ["abs_coeff", "rel_coeff", "rung"]
+        if not isinstance(priority, str):
+            raise TypeError(f'Arg "priority" must be a str. Instead, {type(priority)} was given. The options are: "abs_coeff", "rel_coeff", "rung".')
+        if priority not in priority_list:
+            raise NameError(f'The available options for arg "priority" are: "abs_coeff", "rel_coeff", "rung". {priority} was given instead.')
 
         ptable = GetPeriodicTable()
         saturate_syms = []
@@ -351,7 +376,7 @@ class calcCBH:
                         continue
                     
                 ##### prioritize by user defined rung numbers #####
-                elif alt_rxn_option == "include" and not priority_by_coeff:
+                elif alt_rxn_option == "include" and priority == "rung":
                     alt_rxn_keys = list(self.alternative_rxn[s].keys())
                     alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
@@ -378,8 +403,6 @@ class calcCBH:
                             Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, alt_rxns, skip_precursor_check=True)
                             # Choose the best possible method to assign to the energies dataframe
                             label = f'CBH-{best_alt}-alt'
-
-                            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
                         
                         # EQUAL user and automated rungs 
                         elif best_alt == cbhs_rungs[0]:
@@ -396,8 +419,6 @@ class calcCBH:
                                     label += ', '
                                 label += str(cbhs_rungs[i]) + '-' + sym
                             label += f', {best_alt}-alt)'
-                            
-                            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
 
                         # user rung is worse than automated rungs
                         elif best_alt < cbhs_rungs[0]:
@@ -413,18 +434,22 @@ class calcCBH:
                                         label += ')'
                             
                             Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, cbhs, skip_precursor_check=True, cbh_rungs=cbhs_rungs)
-                            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+                        
+                        choose_best_method_and_assign(Hrxn[s], Hf[s], label)
 
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
                         continue
 
                 ##### prioritize by coeff #####
-                elif alt_rxn_option == "include" and priority_by_coeff:
+                elif alt_rxn_option == "include" and priority in ("abs_coeff", "rel_coeff"):
                     alt_rxn_keys = list(self.alternative_rxn[s].keys())
                     alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
-                        rank_totalcoeff = {rank : sum(map(abs, alt_rxns[rank][s].values())) for rank in alt_rxns}
+                        if priority == "abs_coeff":
+                            rank_totalcoeff = {rank : sum(map(abs, alt_rxns[rank][s].values())) for rank in alt_rxns}
+                        elif priority == "rel_coeff":
+                            rank_totalcoeff = {rank : sum(alt_rxns[rank][s].values()) for rank in alt_rxns}
                         mn = min(rank_totalcoeff.values())
                         mn_keys_alt = [k for k, v in rank_totalcoeff.items() if v == mn]
 
@@ -445,7 +470,10 @@ class calcCBH:
                         new_rxn_d = {}
                         for i, rxn in enumerate(cbhs):
                             new_rxn_d[i] = self.cbh_to_rxn(s, rxn, cbhs_rungs[i])
-                        cbh_totalcoeff = {i : sum(map(abs, new_rxn_d[i][s].values())) for i in new_rxn_d}
+                        if priority == "abs_coeff":
+                            cbh_totalcoeff = {i : sum(map(abs, new_rxn_d[i][s].values())) for i in new_rxn_d}
+                        elif priority == "rel_coeff":
+                            cbh_totalcoeff = {i : sum(new_rxn_d[i][s].values()) for i in new_rxn_d}
 
                         # if alt_rxn has the lowest total coeff, use alt_rxn
                         if mn < min(cbh_totalcoeff.values()):
@@ -514,8 +542,11 @@ class calcCBH:
                 cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
 
             # prioritize reactions by total coefficients or by rung number
-            if priority_by_coeff:
-                cbh_totalcoeff = {i : -1 + sum(cbh.cbh_pdts[cbhs_rungs[i]].values()) - sum(cbh.cbh_rcts[cbhs_rungs[i]].values()) for i, cbh in enumerate(cbhs)}
+            if priority in ("abs_coeff", "rel_coeff"):
+                if priority == "rel_coeff":
+                    cbh_totalcoeff = {i : -1 + sum(cbh.cbh_pdts[cbhs_rungs[i]].values()) - sum(cbh.cbh_rcts[cbhs_rungs[i]].values()) for i, cbh in enumerate(cbhs)}
+                elif priority == "abs_coeff":
+                    cbh_totalcoeff = {i : 1 + sum(cbh.cbh_pdts[cbhs_rungs[i]].values()) + sum(cbh.cbh_rcts[cbhs_rungs[i]].values()) for i, cbh in enumerate(cbhs)}
                 mn = min(cbh_totalcoeff.values())
                 idx = [i for i, v in cbh_totalcoeff.items() if v == mn]
             else:
