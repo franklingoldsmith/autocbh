@@ -190,7 +190,9 @@ class uncertainty_quantification:
         sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
 
         # cycle through molecules from smallest to largest
-        for s in tqdm(sorted_species):
+        pbar = tqdm(sorted_species)
+        for s in pbar:
+            pbar.set_description(f'Species: {s}')
             i_s = self.calcCBH.energies.index.get_loc(s)
             weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[:, 1:], self.calcCBH.energies.index)
 
@@ -219,7 +221,9 @@ class uncertainty_quantification:
         # sort criteria
         simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
 
-        for i in tqdm(range(0, self.init_simulation_matrix.shape[1])):
+        pbar = tqdm(range(0, self.init_simulation_matrix.shape[1]))
+        for i in pbar:
+            pbar.set_description(f'Sample {i+1}')
             self.calcCBH.energies.loc[self.non_nan_species, 'DfH'] = self.init_simulation_matrix[:,i]
             # sorted list of molecules that don't have any reference values
             sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
@@ -295,7 +299,9 @@ class uncertainty_quantification:
         self.simulation_results = np.zeros((len(combos), len(self.calcCBH.energies.index.values), self.num_simulations + 1))
 
         self.simulation_results[:, self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
-        for c, combo in tqdm(enumerate(combos)):
+        pbar = tqdm(enumerate(combos))
+        for c, combo in pbar:
+            pbar.set_description(f'alt rxn option: {combo[0]} | priority: {combo[1]}')
             alt_option, p_option = combo
             with HiddenPrints():
                 self.calcCBH.calc_Hf(self.saturate, priority=p_option, max_rung=self.max_rung, alt_rxn_option=alt_option)
@@ -342,7 +348,9 @@ class uncertainty_quantification:
         self.simulation_results = np.zeros((len(sats), len(self.calcCBH.energies.index.values), self.num_simulations + 1))
 
         self.simulation_results[:, self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
-        for sat_i, sat in tqdm(enumerate(sats)):
+        pbar = tqdm(enumerate(sats))
+        for sat_i, sat in pbar:
+            pbar.set_description(f'Saturation: {sat}')
             with HiddenPrints():
                 self.calcCBH.calc_Hf(sat, priority=priority, max_rung=self.max_rung, alt_rxn_option=alt_rxn_option)
 
