@@ -45,7 +45,7 @@ class buildCBH:
                     use of F2 which leads to a smaller number of precursor molecules
     count_repeats   [-static] Count the number of repeats in a list and returns a 
                     dictionary
-    replace_atoms   [-static] Replace specified atoms with a desired atom
+    replace_implicit_Hs   [-static] Replace specified atoms with a desired atom
     visualize       Used to visualize CBH reactions in Jupyter Notebook. 
     """
 
@@ -55,26 +55,27 @@ class buildCBH:
 
         ARGUMENTS
         ---------
-        :smiles:             [str] SMILES string represnting a molecule
+        :smiles:             [str] 
+                SMILES string represnting a molecule
 
-        :saturate:          [int or str] (default=1 or 'H') The int or str 
-                                representation of the default molecule that will 
-                                saturate the heavy atoms. Usually 'H' (1), but 
-                                is also often 'F' (9) or 'Cl' (17). 
-                                Currently it only supports halogens. 
+        :saturate:          [int or str] (default=1 or 'H')
+                The int or str representation of the default molecule that will 
+                saturate the heavy atoms. Usually 'H' (1), but is also often 
+                'F' (9) or 'Cl' (17). Currently it only supports halogens. 
 
         :allow_overshoot:   [bool] (default=False)
-                                Choose to allow a precursor to have a substructure 
-                                of the target species, as long as the explicit 
-                                target species does not show up on the product 
-                                side. 
-                Ex) if species='CC(F)(F)F' and saturate=9, the highest CBH rung 
-                    would be: 
-                    False - CBH-0-F
-                    True - CBH-1-F (even though C2F6 is generated as a precursor)
+                Choose to allow a precursor to have a substructure of the target 
+                species, as long as the explicit target species does not show up 
+                on the product side. 
+                    Ex) if species='CC(F)(F)F' and saturate=9, the highest CBH rung 
+                        would be: 
+                        False - CBH-0-F
+                        True - CBH-1-F (even though C2F6 is generated as a precursor)
 
-        :ignore_F2:         [bool] (default=True) Avoid using fluorine gas (F2)
-                                 when saturate='F'
+        :ignore_F2:         [bool] (default=True) 
+                Avoid using fluorine gas (F2) when saturate='F'. 
+                Only works when the given molecule contains a combination of only 
+                the atoms: C, H, O, F.
         """
         self.mol = Chem.MolFromSmiles(smiles) # RDkit molecule object
         self.smiles = Chem.CanonSmiles(smiles) # rewrite SMILES str in standard forms
@@ -210,7 +211,7 @@ class buildCBH:
                     trigger = True
 
             if trigger:
-                if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self.smiles_h and self.ignore_F2:
+                if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self.smiles_h and 'C' in self.smiles_h and self.ignore_F2:
                     # if saturation is fluorine and the only elements present are C H O or F
                     cbh_pdts[0], cbh_rcts[0] = self.CBH_0_F()
                 del cbh_rcts[cbh_level]
@@ -265,23 +266,26 @@ class buildCBH:
         return cbh_pdts, cbh_rcts
 
 
-    def atom_centric(self, dist:int, return_smile=False, atom_indices=[], saturate=1) -> list:
+    def atom_centric(self, dist:int, return_smile=True, atom_indices=[], saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species 
         produced by atom-centric CBH steps.
 
         ARGUMENTS
         ---------
-        :dist:          [int] The radius or number of atoms away from a target 
-                            atom (0,1,...)
-        :return_smile:  [bool] Return SMILES string instead of RDKit.Chem Mol 
-                            object
-        :atom_indices:  [list] (default=[]) Specific atom indices to find 
-                            atom-centric residuals
-        :saturate:      [int] (default=1 or 'H') The integer or string 
-                            representation of the default molecule that will saturate
-                            the heavy atoms. Usually 'H' (1), but is also often 
-                            'F' (9) or 'Cl' (17).
+        :dist:          [int] 
+                The radius or number of atoms away from a target atom (0,1,...).
+
+        :return_smile:  [bool] (default=True)
+                Return SMILES string instead of RDKit.Chem Mol object.
+
+        :atom_indices:  [list] (default=[]) 
+                Specific atom indices to find atom-centric residuals.
+
+        :saturate:      [int] (default=1)
+                 The integer or string representation of the default molecule 
+                 that will saturate the heavy atoms. Usually 1 (hydrogen), 
+                 but is also often 9 (fluorine) or 17 (chloride).
 
         RETURNS
         -------
@@ -294,42 +298,52 @@ class buildCBH:
             idxs = atom_indices
         else: # compute subgraphs for all atoms in graph
             if saturate == 1:
+                # Even though we use the graph with explicit H's in the for loop, 
+                # the indices in graph_adj correspond exactly to the indices in the graph_adj_h case
                 idxs = range(len(self.graph_adj))
             else:
                 idxs = range(len(self.graph_adj_h))
         # cycle through relevant atoms
         for i in idxs:
+            # Skip if a given index is a saturation atom
+            if self.graph_h.vs()[i]['AtomicNum'] == saturate:
+                continue
             # atom indices that are within the given radius
             atom_inds = np.where(self.graph_dist_h[i] <= dist)[0]
             # create rdkit mol objects from subgraph
             residual = graph2mol(self.graph_h.subgraph(atom_inds))
             if saturate != 1:
+                # only get impl_valence for H or C since we only want to replace 
+                # H's that are connected to these atoms
+                # ie. we don't want to replace H on OH with F --> OF is a terrible prediction
                 impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in residual.GetAtoms() \
                     if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() in (1,6)}
-                residual = self.replace_atoms(residual, impl_valence, 1, saturate)
+                residual = self.replace_implicit_Hs(residual, impl_valence, saturate)
 
             if return_smile:
-                # MolToSmiles repeated to make explicit H's --> implicit
-                residual = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(residual)))
+                # make explicit H's --> implicit
+                residual = Chem.CanonSmiles(Chem.MolToSmiles(residual))
             residuals.append(residual)
         return residuals
 
 
-    def bond_centric(self, dist:int, return_smile=False, saturate=1) -> list:
+    def bond_centric(self, dist:int, return_smile=True, saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species 
         produced by bond-centric CBH steps.
 
         ARGUMENTS
         ---------
-        :dist:          [int] The radius or number of bonds away from a target 
-                            bond (0,1,...)
-        :return_smile:  [bool] Return SMILES string instead of RDKit.Chem Mol 
-                            object
-        :saturate:      [int] (default=1 or 'H') The integer or string 
-                            representation of the default molecule that will 
-                            saturate the heavy atoms. Usually 'H' (1), but is also 
-                            often 'F' (9) or 'Cl' (17).
+        :dist:          [int] 
+                The radius or number of bonds away from a target bond (0,1,...)
+
+        :return_smile:  [bool] (default = True)
+                Return SMILES string instead of RDKit.Chem Mol object
+
+        :saturate:      [int] (default = 1 or 'H') 
+                The integer or string representation of the default molecule that 
+                will saturate the heavy atoms. Usually 'H' (1), but is also 
+                often 'F' (9) or 'Cl' (17).
 
         RETURNS
         -------
@@ -352,7 +366,7 @@ class buildCBH:
                 gsp_s_refine, gsp_t_refine = (gsp_s[i] for i in gsp_si), (gsp_t[i] for i in gsp_ti)
                 # define edge indices
                 edge_inds = list(set([x[-1] for x in gsp_s_refine] + [x[-1] for x in gsp_t_refine]))
-                # create rdkit mol objects from subgraph
+                # create rdkit mol objects from subgraph --> MUST be no explicit hydrogens (except for radicals)
                 residual = graph2mol(self.graph_h.subgraph(edge_inds))
                 if saturate != 1:
                     # {atom index : implicit valence} for carbon atoms that have more than 1 implicit hydrogen
@@ -360,10 +374,10 @@ class buildCBH:
                     impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in residual.GetAtoms() \
                         if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() == 6}
                     # replace implicit hydrogens with the saturation atom
-                    residual = self.replace_atoms(residual, impl_valence, 1, saturate)
+                    residual = self.replace_implicit_Hs(residual, impl_valence, saturate)
                 if return_smile:
-                    # repeated to remove explicit hydrogens from SMILES string
-                    residual = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(residual)))
+                    # Remove explicit hydrogens from SMILES string
+                    residual = Chem.CanonSmiles(Chem.MolToSmiles(residual))
                 residuals.append(residual)
         return residuals
 
@@ -398,7 +412,8 @@ class buildCBH:
 
         pdts = {'C':coeff_ch4, 'O':coeff_h2o, 'FC(F)(F)F':coeff_cf4}
         rcts = {'[H][H]':coeff_h2}
-
+        if pdts['O'] == 0:
+            del pdts['O']
         return pdts, rcts
 
 
@@ -420,15 +435,16 @@ class buildCBH:
 
 
     @staticmethod
-    def replace_atoms(mol, dictionary:dict, target:int, change:int):
+    def replace_implicit_Hs(mol, impl_valence_dict:dict, change:int):
         """
-        Replace the 'target' atom with a 'change' atom.
+        Replace the implicit hydrogens with a 'change' atom. 
+        Assumes 'change' atom is a halogen.
 
         ARGUMENTS
         ---------
-        :dictionary: [dict] {atom idx : implicit valence}
-        :target:     [int] Element number of the atom to replace
-        :change:     [int] Element number of the atom to replace with
+        :impl_valence_dict: [dict] {atom idx : implicit valence}
+        :target:            [int] Element number of the atom to replace
+        :change:            [int] Element number of the atom to replace with
 
         RETURNS
         -------
@@ -436,12 +452,12 @@ class buildCBH:
         """
         
         new_mol = Chem.RWMol(Chem.AddHs(mol))
-        for i_atom, impl_val in dictionary.items():
+        for i_atom, impl_val in impl_valence_dict.items():
             atom =  new_mol.GetAtomWithIdx(i_atom)
             keep_track_impl_val = 0
             for nbr in atom.GetNeighbors():
-                # if neighbor is carbon or was a terminal atom
-                if nbr.GetAtomicNum() == target: 
+                # if neighbor is an implicit hydrogen
+                if nbr.GetAtomicNum() == 1: 
                     nbr.SetAtomicNum(change)
                     keep_track_impl_val += 1
                     # stop replacing atoms once the num of replaced exceeds the num implicit valence
@@ -479,16 +495,6 @@ class buildCBH:
 
         # cycle through each CBH rung
         for cbh_level in cbh_levels:
-            # Format SMARTS string
-            rct = ''
-            pdt = ''
-            for key in self.cbh_pdts[cbh_level]:
-                pdt = pdt + '.' + key
-            pdt = pdt[1:]
-            for key in self.cbh_rcts[cbh_level]:
-                rct = rct + '.' + key
-            rct = rct[1:]
-            # rxn = self.smiles+'.'+rct+'>>'+pdt
             self.__visualize(cbh_level)
             
 
@@ -559,17 +565,21 @@ def mol2graph(mol):
     return g 
 
 
-def graph2mol(graph, return_smile=False): 
+def graph2mol(graph, return_smiles=False): 
     """Graph to Molecule
     Converts undirected igraph object to RDkit.Chem Mol object.
     Sourced directly from: https://iwatobipen.wordpress.com/2018/05/30/active-learning-rdkit-chemoinformatics-ml/
     
     ARGUMENTS
     ---------
-    :graph:         [igraph graph obj] - chemical graph of molecule attributes include: 
-                        atom idx, atom atomic numbers, atomic symbols, 
-                        bond start/end atom idx's, bond types
-    :return_smile:  [bool] (default=False) return a SMILES string instead of a RDKit.Chem Mol object.
+    :graph:         [igraph graph obj]
+            Chemical graph of molecule attributes include: 
+                atom idx, atom atomic numbers, atomic symbols, 
+                bond start/end atom idx's, bond types
+
+    :return_smiles:  [bool] (default=False) 
+            Return a SMILES string instead of a RDKit.Chem Mol object. 
+            (uses Chem.CanonSmiles so implicit H's will be used if possible)
     
     RETURNS
     -------
@@ -593,7 +603,8 @@ def graph2mol(graph, return_smile=False):
     Chem.SanitizeMol(mol) # ensure implicit hydrogens are accounted
     
     # Generates SMILES str
-    if return_smile:
+    if return_smiles:
+        # will always return SMILES string with implicit hydrogens
         mol = Chem.CanonSmiles(Chem.MolToSmiles(mol))
     return mol
 
@@ -627,12 +638,3 @@ def add_dicts(*dictionaries: dict) -> dict:
     for k in del_list:
         del out_dict[k]
     return out_dict
-
-
-def main():
-    cbh = buildCBH('CC(F)(F)OC(F)[CH2]', 1)
-    for rung in cbh.cbh_pdts:
-        print(rung, cbh.cbh_rcts[rung])
-
-if __name__ == '__main__':
-    main()
