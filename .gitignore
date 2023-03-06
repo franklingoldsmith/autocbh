@@ -1,5 +1,6 @@
 .DS_Store
 main/data/molecule_data/
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
