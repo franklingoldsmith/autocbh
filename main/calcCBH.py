@@ -11,9 +11,6 @@ import yaml
 from itertools import compress
 from copy import copy
 
-# error
-from errors import KeyErrorMessage
-
 
 class calcCBH:
     """
@@ -335,7 +332,13 @@ class calcCBH:
         Hf = {}
         Hrxn = {}
         # sort by the max distance between two atoms in a molecule
-        simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
+        def simple_sort(x):
+            """Sorting algorithm used for smallest to largest
+            Computes the longest path across a molecule.
+            The np.inf condition us used to avoid any issues with
+            physiosorbed species."""
+            arr = np.array(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())
+            return max(arr[arr < np.inf])
         # sorted list of molecules that don't have any reference values
         sorted_species = sorted(self.energies[self.energies['source'].isna()].index.values, key=simple_sort)
 
