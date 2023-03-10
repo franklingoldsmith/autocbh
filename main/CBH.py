@@ -14,18 +14,22 @@ class buildCBH:
     ----------
     :mol:           [RDKit Mol obj]
     :smiles:        [str] RDKit's SMILES respresentation of the target molecule
+    :smiles_ads:    [str or None] RDKit SMILES representation of 
+                            adsorbed/physiosorbed molecule
+    :surface_smiles: [str or None] RDKit SMILES representation of the single surface 
+                            atom
     :graph:         [IGraph graph obj] IGraph's graph representation of the target 
-                                        molecule
-    :graph_adj:     [np array] adjacency matrix of target molecule graph
-    :graph_dist:    [np array] distance matrix between all pairs of nodes
+                            molecule
+    :graph_adj:     [np.array] adjacency matrix of target molecule graph
+    :graph_dist:    [np.array] distance matrix between all pairs of nodes
     
     Same as above but with explicit hydrogens
     :mol_h:         [RDKit Mol obj] molecule 
     :smiles_h:      [str] RDKit's SMILES respresentation of the target molecule
     :graph_h:       [IGraph graph obj] IGraph's graph representation of the target 
                                         molecule
-    :graph_adj_h:   [np array] adjacency matrix of target molecule graph
-    :graph_dist_h:  [np array] distance matrix between all pairs of nodes
+    :graph_adj_h:   [np.array] adjacency matrix of target molecule graph
+    :graph_dist_h:  [np.array] distance matrix between all pairs of nodes
 
     :cbh_rcts:      [nested dict] The reactant side of each CBH level 
                                 {cbh_level: {residual SMILES : num occurences}}
@@ -49,13 +53,13 @@ class buildCBH:
     visualize       Used to visualize CBH reactions in Jupyter Notebook. 
     """
 
-    def __init__(self, smiles:str, saturate=1, allow_overshoot=False, ignore_F2=True):
+    def __init__(self, smiles:str, saturate=1, allow_overshoot=False, ignore_F2=True, surface_smiles:str=None):
         """
         Constructs the attributes of buildCBH class.
 
         ARGUMENTS
         ---------
-        :smiles:             [str] 
+        :smiles:            [str] 
                 SMILES string represnting a molecule
 
         :saturate:          [int or str] (default=1 or 'H')
@@ -76,7 +80,49 @@ class buildCBH:
                 Avoid using fluorine gas (F2) when saturate='F'. 
                 Only works when the given molecule contains a combination of only 
                 the atoms: C, H, O, F.
+
+        :surface_smiles:    [str] (default=None)
+                Valid SMILES string representing the surface atom that the given 
+                molecule is adsorbed to or physiosorbed to. Must be a single atom.
+                i.e., '[Pt]'
         """
+        if surface_smiles and surface_smiles not in smiles and '.' in smiles:
+            raise NameError(f'Cannot use a physiosorbed species with a surface that is not present in the SMILES string.')
+        elif '.' in smiles and surface_smiles is None:
+            raise NameError(f'Cannot use a physiosorbed species without specifying a surface_smiles.')
+        
+        if surface_smiles and surface_smiles in smiles:
+            self.smiles_ads = Chem.CanonSmiles(smiles)
+            num_components = self.smiles_ads.count('.') + 1
+
+            # convert surface_smiles to Canon form
+            try:
+                surface_smiles = Chem.CanonSmiles(surface_smiles)
+            except:
+                raise ValueError(f'Arg "surface_smiles" must be a valid SMILES string. Instead, "{surface_smiles}" was given.')
+            # make sure surface smiles is just an element
+            try:
+                ptable = Chem.GetPeriodicTable()
+                ptable.GetAtomicNumber(surface_smiles.replace('[','').replace(']',''))
+            except:
+                raise ValueError(f'Arg "surface_smiles" must be an element. Instead, "{surface_smiles}" was given.')
+            self.surface_smiles = surface_smiles
+            
+            # check the number of components
+            if num_components > 2:
+                raise NameError('Cannot include more than 2 molecules to compute CBH scheme.')
+            elif num_components == 2 and self.surface_smiles is None:
+                raise NameError('Cannot include more than 1 molecule and compute CBH scheme without specifying surface_smiles to which the molecule is phyisosorbed.')
+            elif num_components == 2:
+                smiles_broken = self.smiles_ads.split('.')
+                smiles_broken_ind = [i for i, s in enumerate(smiles_broken) if s == self.surface_smiles]
+                del smiles_broken[smiles_broken_ind[0]]
+                smiles_broken = smiles_broken[0]
+                smiles = Chem.CanonSmiles(smiles_broken)
+        else:
+            self.smiles_ads = None
+            self.surface_smiles = None
+
         self.mol = Chem.MolFromSmiles(smiles) # RDkit molecule object
         self.smiles = Chem.CanonSmiles(smiles) # rewrite SMILES str in standard forms
 
@@ -96,6 +142,59 @@ class buildCBH:
         self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate, allow_overshoot=allow_overshoot)
         # Highest CBH rung
         self.highest_cbh = max(self.cbh_pdts.keys())
+        
+        # for species with surfaces
+        if self.smiles_ads and self.surface_smiles in self.smiles_ads:
+            for rung in range(self.highest_cbh+1):
+                # make gas-phase species --> physiosorbed
+                self.cbh_pdts[rung] = {(Chem.CanonSmiles(s + '.' + self.surface_smiles) if self.surface_smiles not in s else s): coeff for s, coeff in self.cbh_pdts[rung].items()}
+                self.cbh_rcts[rung] = {(Chem.CanonSmiles(s + '.' + self.surface_smiles) if self.surface_smiles not in s else s): coeff for s, coeff in self.cbh_rcts[rung].items()}
+            
+            # if adsorbate
+            if '.' not in self.smiles_ads:
+                # Assumptions: adsorbate is attached to 1 surface
+                #     Saturation atom forms a diatomic molecule (coeff_physiosorbed)
+                #     Only one saturation atom adsorbs to the surface (coeff_adsorbed)
+                
+                saturate_sym = Chem.GetPeriodicTable().GetElementSymbol(saturate)
+
+                # rcts - pdts for RHS of the linear system
+                rct_surf = sum((coeff for s, coeff in self.cbh_rcts[0].items() if '.' in s and ((saturate != 1 and f'{saturate_sym}{saturate_sym}' not in s) or (saturate == 1 and '[H][H]' not in s))))
+                pdt_surf = sum((coeff for s, coeff in self.cbh_pdts[0].items() if '.' in s))
+                num_surfs = 1 + rct_surf - pdt_surf
+                
+                if saturate == 1:
+                    # Get number of H in product (bakes in stoichiometry)
+                    pdt_H = sum([self.cbh_pdts[0][smiles]*Chem.MolFromSmiles(smiles).GetAtomWithIdx(0).GetTotalNumHs() \
+                        for smiles in self.cbh_pdts[0].keys() if '[H][H]' not in smiles])
+                    # Get number of H in target molecule
+                    rct_H = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
+                    num_sat = rct_H - pdt_H
+                elif saturate != 1:
+                    pdt_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in self.cbh_pdts[0].items()])
+                    rct_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in self.cbh_rcts[0].items() if f'{saturate_sym}{saturate_sym}' not in smiles])
+                    rct_sat += self.smiles.count(saturate_sym)
+                    num_sat = rct_sat - pdt_sat
+                b = np.array([[num_surfs], [num_sat]])
+
+                A_inv = np.array([[2,-1],[1,-1]]) # A = [[1, -1], [1, -2]]
+                
+                # Ax = b
+                coeff_adsorbed, coeff_physiosorbed = (A_inv @ b).T.tolist()[0]
+                
+                smiles_physiosorbed = [s for s in self.cbh_rcts[0].keys() if '.' in s and ((saturate != 1 and f'{saturate_sym}{saturate_sym}' in s) or (saturate == 1 and '[H][H]' in s))][0]
+                self.cbh_rcts[0][smiles_physiosorbed] = coeff_physiosorbed
+                
+                # saturate smiles with saturation atom
+                if ']' in self.surface_smiles and saturate == 1:
+                    smiles_adsorbed = Chem.CanonSmiles(self.surface_smiles.replace(']','') + 'H]')
+                elif saturate == 1:
+                    smiles_adsorbed = Chem.CanonSmiles(self.surface_smiles + 'H')
+                elif saturate != 1:
+                    smiles_adsorbed = Chem.CanonSmiles(self.surface_smiles + saturate_sym)
+                
+                self.cbh_pdts[0][smiles_adsorbed] = coeff_adsorbed
+                del self.cbh_pdts[0][self.surface_smiles]
 
 
     def build_scheme(self, saturate=1, allow_overshoot=False) -> tuple:
@@ -189,7 +288,7 @@ class buildCBH:
                 if len(branch_idx) != 0: 
                     branches = self.atom_centric(np.floor(cbh_level/2), True, branch_idx, saturate)
                     for i in range(len(branches)):
-                        for j in range(branch_degrees[i]-2):
+                        for _ in range(branch_degrees[i]-2):
                             new_branches.append(branches[i])
                     
                 # Account for terminal atoms
@@ -234,10 +333,10 @@ class buildCBH:
                 
                 # Count number of saturation atoms to balance
                 if saturate != 1:
-                    pdt_F = sum([cbh_pdts[0][smiles]*smiles.count(saturate_sym) for smiles in cbh_pdts[0].keys()])
-                    rct_F = sum([cbh_rcts[0][smiles]*smiles.count(saturate_sym) for smiles in cbh_rcts[0].keys()])
-                    rct_F += self.smiles.count(saturate_sym)
-                    cbh_rcts[0][f'{saturate_sym}{saturate_sym}'] = (pdt_F - rct_F)/2
+                    pdt_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in cbh_pdts[0].items()])
+                    rct_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in cbh_rcts[0].items()])
+                    rct_sat += self.smiles.count(saturate_sym)
+                    cbh_rcts[0][f'{saturate_sym}{saturate_sym}'] = (pdt_sat - rct_sat)/2
             else:
                 # Get the previous products + branch
                 if len(new_branches) != 0:
@@ -519,7 +618,10 @@ class buildCBH:
         max_num_mols = max([len(v) for v in self.cbh_pdts.values()]+[len(v) for v in self.cbh_rcts.values()])
 
         rct_df = DataFrame(self.cbh_rcts[cbh_level].items(), columns=['smiles', 'num'])
-        target = DataFrame({self.smiles:1}.items(), columns=['smiles', 'num'])
+        if self.smiles_ads:
+            target = DataFrame({self.smiles_ads:1}.items(), columns=['smiles', 'num'])
+        else:
+            target = DataFrame({self.smiles:1}.items(), columns=['smiles', 'num'])
         rct_df = concat([target, rct_df[:]]).reset_index(drop = True)
         PandasTools.AddMoleculeColumnToFrame(rct_df, smilesCol='smiles')
         pdt_df = DataFrame(self.cbh_pdts[cbh_level].items(), columns=['smiles', 'num'])
@@ -552,8 +654,7 @@ def mol2graph(mol):
     # atom attributes: atom number, atomic number, atom symbol
     # bond attributes: atom 1 index, atom 2 index, atom bond type as number
     atom_attributes = [(a.GetIdx(), a.GetAtomicNum(), a.GetSymbol(), a.GetNumRadicalElectrons()) for a in mol.GetAtoms()]
-    bond_attributes = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx(), b.GetBondType(), b.GetBondTypeAsDouble()) 
-                       for b in mol.GetBonds()]
+    bond_attributes = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx(), b.GetBondType(), b.GetBondTypeAsDouble()) for b in mol.GetBonds()]
     # generate chemical graph
     g = igraph.Graph()
     # Create vertices for each Atom
