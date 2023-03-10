@@ -6,6 +6,7 @@ import main.CBH as CBH
 from main.CBH import mol2graph, graph2mol, add_dicts
 from rdkit.Chem import MolFromSmiles
 from rdkit import Chem
+from pytest import raises
 
 class TestMol2Graph:
 
@@ -466,6 +467,7 @@ class TestBondCentric:
         correct = [Chem.CanonSmiles(s) for s in correct]
         assert set(correct) == residuals
 
+
 class TestBuildSchemeGeneral:
 
     def test_general_highest_rung(self):
@@ -561,6 +563,7 @@ class TestBuildSchemeGeneral:
         cbh = CBH.buildCBH(smiles, 9)
         assert cbh.cbh_pdts[3] == {'O=C(Cl)NS': 1, 'FSNC(F)(F)F': 1}
 
+
 class TestBuildSchemeOvershoot:
     ####################
     #### OVERSHOOT ####
@@ -627,6 +630,7 @@ class TestBuildSchemeOvershoot:
         smiles = 'CC(F)(F)Cl'
         cbh = CBH.buildCBH(smiles, 9, allow_overshoot=True)
         assert cbh.cbh_pdts[2] == {'CC(F)(F)F': 1, 'FC(F)(F)C(F)(F)Cl': 1}
+
 
 class TestBuildSchemeRing:
     ##############
@@ -724,6 +728,7 @@ class TestBuildSchemeRing:
         cbh = CBH.buildCBH(smiles, 9)
         assert cbh.cbh_pdts[3] == {'O=C(NC(F)(F)F)C(F)(F)F': 1, 'FC(CC(F)(F)F)C(F)(F)F': 1, 'FC(F)(F)CNC(F)(F)F': 1, 'NCC(F)C(F)(F)F': 1, 'NC(=O)CC(F)(F)F': 1}
 
+
 class TestBuildSchemeRadical:
     #################
     #### RADICAL ####
@@ -819,6 +824,7 @@ class TestBuildSchemeRadical:
         cbh = CBH.buildCBH(smiles, 9)
         assert cbh.cbh_pdts[3] == {'[CH2]C(F)(F)[C]F': 1, '[C]C[C]C(F)(F)F': 1, 'F[C](F)C(F)(F)[C]C(F)(F)F': 1}
 
+
 class TestBuildSchemeBranch:
     ################
     #### BRANCH ####
@@ -904,6 +910,7 @@ class TestBuildSchemeBranch:
         cbh = CBH.buildCBH(smiles, 9)
         assert cbh.cbh_pdts[2] == {'FC(F)(F)C(F)(F)Cl': 1, 'FC(F)(F)C(C(F)(F)F)C(F)(F)F': 1, 'CC(F)(F)F': 1, 'FCC(F)(F)F': 1}
 
+
 class TestBuildSchemeIgnoreF2:
     ###################
     #### IGNORE F2 ####
@@ -982,11 +989,250 @@ class TestBuildSchemeIgnoreF2:
         assert cbh.cbh_pdts[2] == {'O=C(C(F)(F)F)C(F)(F)F': 1, 'CC(F)(F)F': 1, 'OC(F)C(F)(F)F': 1}
 
 
+class TestBuildSchemeAdsorbate:
+
+    single_smiles = 'C(Cl)=C(F)C=[Pt]'
+    single_cbh = CBH.buildCBH(single_smiles, saturate=1, allow_overshoot=True, ignore_F2=True, surface_smiles='[Pt]')
+    single_cbh_sat = CBH.buildCBH(single_smiles, saturate=9, allow_overshoot=True, ignore_F2=True, surface_smiles='[Pt]')
+
+    double_smiles = 'C(F)C(=[Pt])C#[Pt]'
+    double_cbh = CBH.buildCBH(double_smiles, saturate=1, allow_overshoot=True, ignore_F2=True, surface_smiles='[Pt]')
+    double_cbh_sat = CBH.buildCBH(double_smiles, saturate=9, allow_overshoot=True, ignore_F2=True, surface_smiles='[Pt]')
+
+    triple_smiles = '[Pt]C(F)C(Cl)C(=[Pt])C#[Pt]'
+    triple_cbh = CBH.buildCBH(triple_smiles, saturate=1, allow_overshoot=True, ignore_F2=True, surface_smiles='[Pt]')
+    triple_cbh_sat = CBH.buildCBH(triple_smiles, saturate=9, allow_overshoot=True, ignore_F2=True, surface_smiles='[Pt]')
+    
     ###################
     #### ADSORBATE ####
     ###################
+    def test_single_ads_0_rcts(self):
+        assert self.single_cbh.cbh_rcts[0] == {'[H][H].[Pt]': 8}
 
+    def test_single_ads_0_pdts(self):
+        assert self.single_cbh.cbh_pdts[0] == {'F.[Pt]': 1, 'Cl.[Pt]': 1, 'C.[Pt]': 3, '[PtH]': 4}
+
+    def test_single_ads_1_rcts(self):
+        assert self.single_cbh.cbh_rcts[1] == {'C.[Pt]': 4}
+
+    def test_single_ads_1_pdts(self):
+        assert self.single_cbh.cbh_pdts[1] == {'CCl.[Pt]': 1, 'CF.[Pt]': 1, 'CC.[Pt]': 1, 'C=[Pt]': 1, 'C=C.[Pt]': 1}
+
+    def test_single_ads_2_rcts(self):
+        assert self.single_cbh.cbh_rcts[2] == {'CC.[Pt]': 1, 'C=C.[Pt]': 1}
+
+    def test_single_ads_2_pdts(self):
+        assert self.single_cbh.cbh_pdts[2] == {'CC=[Pt]': 1, 'C=CCl.[Pt]': 1, 'C=C(C)F.[Pt]': 1}
+
+    def test_single_ads_3_rcts(self):
+        assert self.single_cbh.cbh_rcts[3] == {'C=C(C)F.[Pt]': 1}
+
+    def test_single_ads_3_pdts(self):
+        assert self.single_cbh.cbh_pdts[3] == {'CC(F)=CCl.[Pt]': 1, 'C=C(F)C=[Pt]': 1}
+
+    def test_single_ads_sat_0_rcts(self):
+        assert self.single_cbh_sat.cbh_rcts[0] == {'[H][H].[Pt]': 0.5, 'FF.[Pt]': 8.5}
+
+    def test_single_ads_sat_0_pdts(self):
+        assert self.single_cbh_sat.cbh_pdts[0] == {'FC(F)(F)F.[Pt]': 3, 'Cl.[Pt]': 1, 'F.[Pt]': 2, 'F[Pt]': 4.0}
+
+    def test_single_ads_sat_1_rcts(self):
+        assert self.single_cbh_sat.cbh_rcts[1] == {'FC(F)(F)F.[Pt]': 5}
+
+    def test_single_ads_sat_1_pdts(self):
+        assert self.single_cbh_sat.cbh_pdts[1] == {'FC(F)=C(F)F.[Pt]': 1, 'FC(F)F.[Pt]': 2, 'FC(F)=[Pt]': 1, 'FC(F)(F)C(F)(F)F.[Pt]': 1, 'FC(F)(F)Cl.[Pt]': 1}
+
+    def test_single_ads_sat_2_rcts(self):
+        assert self.single_cbh_sat.cbh_rcts[2] == {'FC(F)=C(F)F.[Pt]': 1, 'FC(F)(F)C(F)(F)F.[Pt]': 1}
+
+    def test_single_ads_sat_2_pdts(self):
+        assert self.single_cbh_sat.cbh_pdts[2] == {'FC(F)=CCl.[Pt]': 1, 'FC(F)(F)C=[Pt]': 1, 'FC(F)=C(F)C(F)(F)F.[Pt]': 1}
+
+    def test_single_ads_sat_3_rcts(self):
+        assert self.single_cbh_sat.cbh_rcts[3] == {'FC(F)=C(F)C(F)(F)F.[Pt]': 1}
+
+    def test_single_ads_sat_3_pdts(self):
+        assert self.single_cbh_sat.cbh_pdts[3] == {'FC(=CCl)C(F)(F)F.[Pt]': 1, 'FC(F)=C(F)C=[Pt]': 1}
+
+    def test_double_ads_0_rcts(self):
+        assert self.double_cbh.cbh_rcts[0] == {'[H][H].[Pt]': 8}
+
+    def test_double_ads_0_pdts(self):
+        assert self.double_cbh.cbh_pdts[0] == {'F.[Pt]': 1, 'C.[Pt]': 3, '[PtH]': 5}
+
+    def test_double_ads_sat_0_rcts(self):
+        assert self.double_cbh_sat.cbh_rcts[0] == {'FF.[Pt]': 9}
+
+    def test_double_ads_sat_0_pdts(self):
+        assert self.double_cbh_sat.cbh_pdts[0] == {'F.[Pt]': 2, 'FC(F)(F)F.[Pt]': 3, 'F[Pt]': 5}
+
+    def test_double_ads_1_rcts(self):
+        assert self.double_cbh.cbh_rcts[1] == {'C.[Pt]': 4}
+
+    def test_double_ads_1_pdts(self):
+        assert self.double_cbh.cbh_pdts[1] == {'CF.[Pt]': 1, 'CC.[Pt]': 2, 'C=[Pt]': 1, 'C#[Pt]': 1}
+
+    def test_double_ads_sat_1_rcts(self):
+        assert self.double_cbh_sat.cbh_rcts[1] == {'FC(F)(F)F.[Pt]': 5}
+
+    def test_double_ads_sat_1_pdts(self):
+        assert self.double_cbh_sat.cbh_pdts[1] == {'FC(F)(F)C(F)(F)F.[Pt]': 2, 'FC(F)=[Pt]': 1, 'FC#[Pt]': 1, 'FC(F)F.[Pt]': 2}
+
+    def test_double_ads_2_rcts(self):
+        assert self.double_cbh.cbh_rcts[2] == {'CC.[Pt]': 2}
+
+    def test_double_ads_2_pdts(self):
+        assert self.double_cbh.cbh_pdts[2] == {'CCF.[Pt]': 1, 'CC(C)=[Pt]': 1, 'CC#[Pt]': 1}
+
+    def test_double_ads_sat_2_rcts(self):
+        assert self.double_cbh_sat.cbh_rcts[2] == {'FC(F)(F)C(F)(F)F.[Pt]': 2}
+
+    def test_double_ads_sat_2_pdts(self):
+        assert self.double_cbh_sat.cbh_pdts[2] == {'FC(F)(F)C(=[Pt])C(F)(F)F': 1, 'FC(F)(F)C#[Pt]': 1, 'FCC(F)(F)F.[Pt]': 1}
+
+    def test_double_ads_3_rcts(self):
+        assert self.double_cbh.cbh_rcts[3] == {'CC(C)=[Pt]': 1}
+
+    def test_double_ads_3_pdts(self):
+        assert self.double_cbh.cbh_pdts[3] == {'CC(=[Pt])CF': 1, 'CC(=[Pt])C#[Pt]': 1}
+
+    def test_double_ads_sat_3_rcts(self):
+        assert self.double_cbh_sat.cbh_rcts[3] == {'FC(F)(F)C(=[Pt])C(F)(F)F': 1}
+
+    def test_double_ads_sat_3_pdts(self):
+        assert self.double_cbh_sat.cbh_pdts[3] == {'FCC(=[Pt])C(F)(F)F': 1, 'FC(F)(F)C(=[Pt])C#[Pt]': 1}
+
+    def test_triple_ads_0_rcts(self):
+        assert self.triple_cbh.cbh_rcts[0] == {'[H][H].[Pt]': 11}
+
+    def test_triple_ads_0_pdts(self):
+        assert self.triple_cbh.cbh_pdts[0] == {'C.[Pt]': 4, 'Cl.[Pt]': 1, 'F.[Pt]': 1, '[PtH]': 6}
+
+    def test_triple_ads_1_rcts(self):
+        assert self.triple_cbh.cbh_rcts[1] == {'C.[Pt]': 7}
+
+    def test_triple_ads_1_pdts(self):
+        assert self.triple_cbh.cbh_pdts[1] == {'CC.[Pt]': 3, 'CF.[Pt]': 1, 'CCl.[Pt]': 1, 'C=[Pt]': 1, 'C#[Pt]': 1, 'C[Pt]': 1}
+
+    def test_triple_ads_2_rcts(self):
+        assert self.triple_cbh.cbh_rcts[2] == {'CC.[Pt]': 3}
+
+    def test_triple_ads_2_pdts(self):
+        assert self.triple_cbh.cbh_pdts[2] == {'CC(C)=[Pt]': 1, 'CC(C)Cl.[Pt]': 1, 'CC(F)[Pt]': 1, 'CC#[Pt]': 1}
+
+    def test_triple_ads_3_rcts(self):
+        assert self.triple_cbh.cbh_rcts[3] == {'CC(C)=[Pt]': 1, 'CC(C)Cl.[Pt]': 1}
+
+    def test_triple_ads_3_pdts(self):
+        assert self.triple_cbh.cbh_pdts[3] == {'CC(=[Pt])C#[Pt]': 1, 'CC(=[Pt])C(C)Cl': 1, 'CC(Cl)C(F)[Pt]': 1}
+
+    def test_triple_ads_4_rcts(self):
+        assert self.triple_cbh.cbh_rcts[4] == {'CC(=[Pt])C(C)Cl': 1}
+
+    def test_triple_ads_4_pdts(self):
+        assert self.triple_cbh.cbh_pdts[4] == {'CC(=[Pt])C(Cl)C(F)[Pt]': 1, 'CC(Cl)C(=[Pt])C#[Pt]': 1}
+
+    def test_triple_ads_0_sat_rcts(self):
+        assert self.triple_cbh_sat.cbh_rcts[0] == {'[H][H].[Pt]': 0.5, 'FF.[Pt]': 11.5}
+
+    def test_triple_ads_0_sat_pdts(self):
+        assert self.triple_cbh_sat.cbh_pdts[0] == {'FC(F)(F)F.[Pt]': 4, 'Cl.[Pt]': 1, 'F.[Pt]': 2, 'F[Pt]': 6.0}
+
+    def test_triple_ads_1_sat_rcts(self):
+        assert self.triple_cbh_sat.cbh_rcts[1] == {'FC(F)(F)F.[Pt]': 8}
+
+    def test_triple_ads_1_sat_pdts(self):
+        assert self.triple_cbh_sat.cbh_pdts[1] == {'FC#[Pt]': 1, 'FC(F)F.[Pt]': 2, 'FC(F)(F)[Pt]': 1, 'FC(F)=[Pt]': 1, 'FC(F)(F)C(F)(F)F.[Pt]': 3, 'FC(F)(F)Cl.[Pt]': 1}
+
+    def test_triple_ads_2_sat_rcts(self):
+        assert self.triple_cbh_sat.cbh_rcts[2] == {'FC(F)(F)C(F)(F)F.[Pt]': 3}
+
+    def test_triple_ads_2_sat_pdts(self):
+        assert self.triple_cbh_sat.cbh_pdts[2] == {'FC(F)(F)C(Cl)C(F)(F)F.[Pt]': 1, 'FC(F)(F)C#[Pt]': 1, 'FC([Pt])C(F)(F)F': 1, 'FC(F)(F)C(=[Pt])C(F)(F)F': 1}
+
+    def test_triple_ads_3_sat_rcts(self):
+        assert self.triple_cbh_sat.cbh_rcts[3] == {'FC(F)(F)C(Cl)C(F)(F)F.[Pt]': 1, 'FC(F)(F)C(=[Pt])C(F)(F)F': 1}
+
+    def test_triple_ads_3_sat_pdts(self):
+        assert self.triple_cbh_sat.cbh_pdts[3] == {'FC([Pt])C(Cl)C(F)(F)F': 1, 'FC(F)(F)C(=[Pt])C(Cl)C(F)(F)F': 1, 'FC(F)(F)C(=[Pt])C#[Pt]': 1}
+
+    def test_triple_ads_4_sat_rcts(self):
+        assert self.triple_cbh_sat.cbh_rcts[4] == {'FC(F)(F)C(=[Pt])C(Cl)C(F)(F)F': 1}
+
+    def test_triple_ads_4_sat_pdts(self):
+        assert self.triple_cbh_sat.cbh_pdts[4] == {'FC(F)(F)C(Cl)C(=[Pt])C#[Pt]': 1, 'FC([Pt])C(Cl)C(=[Pt])C(F)(F)F': 1}
+    
+    # test errors
+    def test_invalid_surface_smiles(self):
+        with raises(Exception):
+            CBH.buildCBH('C', surface_smiles='Pt')
+    
+    def test_surface_is_not_single_element(self):
+        with raises(Exception):
+            CBH.buildCBH('C', surface_smiles='[Pt][Co]')
+
+    # test what happens when you provide surf smiles but actual molecule doesn't have a surf species
+
+
+class TestBuildSchemePhysiosorbed:
+    smiles = 'ClC(=O)NSF.[Pt]'
+    cbh = CBH.buildCBH(smiles, saturate=1, allow_overshoot=True, ignore_F2=False, surface_smiles='[Pt]')
+    cbh_sat = CBH.buildCBH(smiles, saturate=9, allow_overshoot=True, ignore_F2=False, surface_smiles='[Pt]')
 
     ######################
     #### PHYSIOSORBED ####
     ######################
+
+    def test_physiosorbed_but_surface_not_correct(self):
+        with raises(Exception):
+            CBH.buildCBH('C.[Pt]', surface_smiles='[Pt][Co]')
+    
+    def test_too_many_components(self):
+        with raises(Exception):
+            CBH.buildCBH('C.Cl.[Pt]', surface_smiles='[Pt]')
+    
+    def test_physiosorbed_without_surface(self):
+        with raises(Exception):
+            CBH.buildCBH('C.[Pt]')
+
+    # Biggest issue: 
+    # it is impossible to balance CBH-0 for molecules with double/triple bonds 
+    # attached to carbons.
+    def test_physio_1_rct(self):
+        assert self.cbh.cbh_rcts[1] == {'N.[Pt]': 1, 'C.[Pt]': 2, 'S.[Pt]': 1}
+        
+    def test_physio_1_pdt(self):
+        assert self.cbh.cbh_pdts[1] == {'CN.[Pt]': 1, 'NS.[Pt]': 1, 'FS.[Pt]': 1, 'C=O.[Pt]': 1, 'CCl.[Pt]': 1}
+
+    def test_physio_2_rct(self):
+        assert self.cbh.cbh_rcts[2] == {'CN.[Pt]': 1, 'NS.[Pt]': 1}
+        
+    def test_physio_2_pdt(self):
+        assert self.cbh.cbh_pdts[2] == {'NC(=O)Cl.[Pt]': 1, 'CNS.[Pt]': 1, 'NSF.[Pt]': 1}
+
+    def test_physio_3_rct(self):
+        assert self.cbh.cbh_rcts[3] == {'CNS.[Pt]': 1}
+        
+    def test_physio_3_pdt(self):
+        assert self.cbh.cbh_pdts[3] == {'CNSF.[Pt]': 1, 'O=C(Cl)NS.[Pt]': 1}
+
+    
+    def test_physio_1_rct_sat(self):
+        assert self.cbh_sat.cbh_rcts[1] == {'N.[Pt]': 1, 'FC(F)(F)F.[Pt]': 2}
+        
+    def test_physio_1_pdt_sat(self):
+        assert self.cbh_sat.cbh_pdts[1] == {'FC(F)(F)Cl.[Pt]': 1, 'NC(F)(F)F.[Pt]': 1, 'O=C(F)F.[Pt]': 1, 'NS.[Pt]': 1}
+
+    def test_physio_2_rct_sat(self):
+        assert self.cbh_sat.cbh_rcts[2] == {'NC(F)(F)F.[Pt]': 1, 'NS.[Pt]': 1}
+        
+    def test_physio_2_pdt_sat(self):
+        assert self.cbh_sat.cbh_pdts[2] == {'FC(F)(F)NS.[Pt]': 1, 'NC(=O)Cl.[Pt]': 1, 'NSF.[Pt]': 1}
+
+    def test_physio_3_rct_sat(self):
+        assert self.cbh_sat.cbh_rcts[3] == {'FC(F)(F)NS.[Pt]': 1}
+        
+    def test_physio_3_pdt_sat(self):
+        assert self.cbh_sat.cbh_pdts[3] == {'FSNC(F)(F)F.[Pt]': 1, 'O=C(Cl)NS.[Pt]': 1}
+
+    
