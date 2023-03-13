@@ -331,7 +331,7 @@ def generate_alias_file(folder_path: str):
                     aliases[m['alias']] = m['smiles']
                 elif type(m['alias']) == list and len(m['alias']) > 0:
                     for a in m['alias']:
-                        aliases[a] = m['smiles']
+                        aliases[a] = Chem.CanonSmiles(m['smiles'])
                 
     # TODO: save to a file
     with open('alias.yaml', 'w') as f:
