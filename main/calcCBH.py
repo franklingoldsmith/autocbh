@@ -147,82 +147,6 @@ class calcCBH:
         
         self.error_messages = {}
 
-        
-    def generate_CBH_coeffs(self, species_list: list, saturate: int=1, allow_overshoot=False, include_target=True) -> list:
-        """
-        Generate a list of Pandas DataFrame objects that hold the coefficients 
-        for every precursor created for CBH schemes of each target species.
-
-        ARGUMENTS
-        ---------
-        :self:              [calcCBH] object
-
-        :species_list:      [list] List of SMILES strings with target molecules.
-
-        :saturate:          [int or str] Integer representing the atomic number 
-                                of the element to saturate residual species with. 
-                                String representation of the element also works.
-                                (default=1)
-
-        :allow_overshoot:   [bool] (default=False)
-                                Choose to allow a precursor to have a substructure 
-                                of the target species, as long as the explicit 
-                                target species does not show up on the product 
-                                side. 
-                Ex) if species='CC(F)(F)F' and saturate=9, the highest CBH rung 
-                    would be: 
-                    False - CBH-0-F
-                    True - CBH-1-F (even though C2F6 is generated as a precursor)
-
-        :include_target:    [bool] (default=True) Include the target species with
-                                a coefficient of -1
-
-        RETURNS
-        -------
-        :dfs:   [list] List of DataFrames for each rung. Each DataFrame holds 
-                    the coefficients of precursors for each target species.
-
-        Example
-        -------
-        dfs = [df0, df1, df2, ..., dfn] Where n = the highest CBH rung
-        
-        dfn = DataFrame where the index is the target species, and columns are 
-                precursor species
-
-        Data within DataFrame are coefficients for precursor species that are 
-        used for the CBH rung of the given target species.
-        """
-        
-        species_list = [CanonSmiles(species) for species in species_list] # list of SMILES strings
-
-        # initialize dictionaries to hold each species' CBH scheme
-        all_rcts = {} # {species: {CBH scheme reactants}}
-        all_pdts = {} # {species: {CBH scheme products}}
-        highest_rung_per_molec = []
-        for species in species_list:
-            cbh = CBH.buildCBH(species, saturate, allow_overshoot=allow_overshoot) # generate CBH scheme
-            # add to dictionary / lists
-            all_rcts[species] = cbh.cbh_rcts
-            all_pdts[species] = cbh.cbh_pdts
-            highest_rung_per_molec.append(cbh.highest_cbh)
-        
-        # Find the highest CBH rung of all the CBH schemes
-        highest_rung = max(highest_rung_per_molec)
-
-        dfs = [] # initialize DataFrame list
-        # Cycle through each CBH rung
-        for rung in range(highest_rung+1):
-            df = {}
-            # Cycle through each species in species_list
-            for species in species_list:
-                if rung <= max(all_pdts[species].keys()):
-                    df[species] = all_pdts[species][rung]
-                    df[species].update((precursor, coeff * -1) for precursor,coeff in all_rcts[species][rung].items())
-                    if include_target:
-                        df[species].update({species:-1})
-            dfs.append(pd.DataFrame(df).fillna(0).T)
-        return dfs
-
 
     def calc_Hf(self, saturate:list=[1,9], priority:str="abs_coeff", max_rung:int=None, alt_rxn_option:str=None):
         """
@@ -324,7 +248,7 @@ class calcCBH:
 
         def choose_best_method_and_assign(Hrxn_d:dict, Hf_d:dict, label:str):
             """Chooses best method then assigns calculated values to self.energies dataframe."""
-            final_Hrxn, final_Hf, label = self.choose_best_method(Hrxn_d, Hf_d, label)
+            final_Hrxn, final_Hf, label = self._choose_best_method(Hrxn_d, Hf_d, label)
             self.energies.loc[s, 'DfH'] = final_Hf
             self.energies.loc[s, 'DrxnH'] = final_Hrxn
             self.energies.loc[s, 'source'] = label
@@ -394,7 +318,7 @@ class calcCBH:
                                 rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
                             else:
                                 rung = cbhs[-1].highest_cbh
-                            cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
+                            cbhs_rungs.append(self._check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
                         
                         idx = np.where(np.array(cbhs_rungs) == np.array(cbhs_rungs).max())[0].tolist()
                         cbhs = [cbhs[i] for i in idx]
@@ -411,7 +335,7 @@ class calcCBH:
                         elif best_alt == cbhs_rungs[0]:
                             new_rxn_d = {}
                             for i, rxn in enumerate(cbhs):
-                                new_rxn_d[i] = self.cbh_to_rxn(s, rxn, cbhs_rungs[i])
+                                new_rxn_d[i] = self._cbh_to_rxn(s, rxn, cbhs_rungs[i])
                             new_rxn_d[i+1] = alt_rxns[best_alt]
                             Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, new_rxn_d, skip_precursor_check=True)
 
@@ -464,7 +388,7 @@ class calcCBH:
                                 rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
                             else:
                                 rung = cbhs[-1].highest_cbh
-                            cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
+                            cbhs_rungs.append(self._check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
                         idx = np.where(np.array(cbhs_rungs) == np.array(cbhs_rungs).max())[0].tolist()
                         cbhs = [cbhs[i] for i in idx]
                         cbhs_rungs = [cbhs_rungs[i] for i in idx]
@@ -472,7 +396,7 @@ class calcCBH:
 
                         new_rxn_d = {}
                         for i, rxn in enumerate(cbhs):
-                            new_rxn_d[i] = self.cbh_to_rxn(s, rxn, cbhs_rungs[i])
+                            new_rxn_d[i] = self._cbh_to_rxn(s, rxn, cbhs_rungs[i])
                         if priority == "abs_coeff":
                             cbh_totalcoeff = {i : sum(map(abs, new_rxn_d[i][s].values())) for i in new_rxn_d}
                         elif priority == "rel_coeff":
@@ -542,7 +466,7 @@ class calcCBH:
                     rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
                 else:
                     rung = cbhs[-1].highest_cbh
-                cbhs_rungs.append(self.check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
+                cbhs_rungs.append(self._check_rung_usability(s, rung, cbhs[-1].cbh_rcts, cbhs[-1].cbh_pdts, saturate_syms[i]))
 
             # prioritize reactions by total coefficients or by rung number
             if priority in ("abs_coeff", "rel_coeff"):
@@ -587,7 +511,7 @@ class calcCBH:
         return self.energies[['DfH', 'DrxnH', 'source']]
 
 
-    def cbh_to_rxn(self, s: str, cbh: CBH.buildCBH, cbh_rung: int) -> dict:
+    def _cbh_to_rxn(self, s: str, cbh: CBH.buildCBH, cbh_rung: int) -> dict:
         """
         Helper method to generate a dictionary from a cbh's reactants
         and products. This negates the reactants and adds the species
@@ -745,7 +669,7 @@ class calcCBH:
         # if only one saturation
         if len(cbh_or_altrxn) == 1:
             if isinstance(cbh_or_altrxn, list):
-                rxn = self.cbh_to_rxn(s, cbh_or_altrxn[0], cbh_rungs[0])
+                rxn = self._cbh_to_rxn(s, cbh_or_altrxn[0], cbh_rungs[0])
             elif isinstance(cbh_or_altrxn, dict):
                 rxn = cbh_or_altrxn[list(cbh_or_altrxn.keys())[0]]
 
@@ -761,7 +685,7 @@ class calcCBH:
                 iterable_obj = cbh_or_altrxn.values()
             for i, rxn in enumerate(iterable_obj):
                 if isinstance(cbh_or_altrxn, list):
-                    rxn = self.cbh_to_rxn(s, rxn, cbh_rungs[i])
+                    rxn = self._cbh_to_rxn(s, rxn, cbh_rungs[i])
                 Hrxn_s, Hf_s = self.Hf(s, rxn, skip_precursor_check=skip_precursor_check)
                 Hrxn_ls.append(Hrxn_s)
                 Hf_ls.append(Hf_s)
@@ -835,13 +759,13 @@ class calcCBH:
         for i, sat in enumerate(sats):
             if sat != 'alt':
                 cbh = CBH.buildCBH(s, sat, allow_overshoot=True)
-                rxns[i] = self.cbh_to_rxn(s, cbh, rungs[i])
+                rxns[i] = self._cbh_to_rxn(s, cbh, rungs[i])
             else:
                 rxns[i] = {s: copy(self.alternative_rxn[s][rungs[i]])}
                 rxns[i][s].update({s:-1})
         
         weighted_Hrxn, weighted_Hf = self._weighting_scheme_Hf(s, rxns, skip_precursor_check=True)
-        weighted_Hrxn, weighted_Hf, _ = self.choose_best_method(weighted_Hrxn, weighted_Hf, '')
+        weighted_Hrxn, weighted_Hf, _ = self._choose_best_method(weighted_Hrxn, weighted_Hf, '')
 
         if not inplace:
             return weighted_Hrxn, weighted_Hf
@@ -911,7 +835,7 @@ class calcCBH:
         for i, sat in enumerate(sats):
             if sat != 'alt':
                 cbh = CBH.buildCBH(s, sat, allow_overshoot=True)
-                rxns[i] = self.cbh_to_rxn(s, cbh, rungs[i])
+                rxns[i] = self._cbh_to_rxn(s, cbh, rungs[i])
             else:
                 rxns[i] = {s: copy(self.alternative_rxn[s][rungs[i]])}
                 rxns[i][s].update({s:-1})
@@ -1023,9 +947,9 @@ class calcCBH:
                     self.error_messages[s] = []
                     self.error_messages[s].append(prepend_str)
 
-                test_rung = self.check_rung_usability(s, rung, s_cbh.cbh_rcts, s_cbh.cbh_pdts, saturate_sym)
+                test_rung = self._check_rung_usability(s, rung, s_cbh.cbh_rcts, s_cbh.cbh_pdts, saturate_sym)
                 
-                rxn = self.cbh_to_rxn(s, s_cbh, rung)
+                rxn = self._cbh_to_rxn(s, s_cbh, rung)
                 Hrxn[rung], Hf[rung] = self.Hf(s, rxn, skip_precursor_check=True)
             except TypeError:
                 raise TypeError(f'Cannot compute CBH-{rung}')
@@ -1044,7 +968,7 @@ class calcCBH:
         return Hrxn, Hf
 
 
-    def choose_best_method(self, Hrxn: dict, Hf: dict, label: str):
+    def _choose_best_method(self, Hrxn: dict, Hf: dict, label: str):
         """
         Chooses the best level of theory to log in self.energies dataframe.
 
@@ -1172,7 +1096,7 @@ class calcCBH:
         return weights.tolist()
 
     
-    def check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str): 
+    def _check_rung_usability(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str): 
         """
         Method that checks a given CBH rung's usability by looking for missing 
         reactants or whether all precursors were derived using CBH schemes of 
@@ -1637,4 +1561,80 @@ class calcCBH:
             
             self.energies.to_pickle(file_path)
             print(f'Saved to: {file_path}')
+
+
+    @staticmethod
+    def generate_CBH_coeffs(species_list: list, saturate: int=1, allow_overshoot=False, include_target=True) -> list:
+        """
+        Generate a list of Pandas DataFrame objects that hold the coefficients 
+        for every precursor created for CBH schemes of each target species.
+
+        ARGUMENTS
+        ---------
+        :self:              [calcCBH] object
+
+        :species_list:      [list] List of SMILES strings with target molecules.
+
+        :saturate:          [int or str] Integer representing the atomic number 
+                                of the element to saturate residual species with. 
+                                String representation of the element also works.
+                                (default=1)
+
+        :allow_overshoot:   [bool] (default=False)
+                                Choose to allow a precursor to have a substructure 
+                                of the target species, as long as the explicit 
+                                target species does not show up on the product 
+                                side. 
+                Ex) if species='CC(F)(F)F' and saturate=9, the highest CBH rung 
+                    would be: 
+                    False - CBH-0-F
+                    True - CBH-1-F (even though C2F6 is generated as a precursor)
+
+        :include_target:    [bool] (default=True) Include the target species with
+                                a coefficient of -1
+
+        RETURNS
+        -------
+        :dfs:   [list] List of DataFrames for each rung. Each DataFrame holds 
+                    the coefficients of precursors for each target species.
+
+        Example
+        -------
+        dfs = [df0, df1, df2, ..., dfn] Where n = the highest CBH rung
         
+        dfn = DataFrame where the index is the target species, and columns are 
+                precursor species
+
+        Data within DataFrame are coefficients for precursor species that are 
+        used for the CBH rung of the given target species.
+        """
+        
+        species_list = [CanonSmiles(species) for species in species_list] # list of SMILES strings
+
+        # initialize dictionaries to hold each species' CBH scheme
+        all_rcts = {} # {species: {CBH scheme reactants}}
+        all_pdts = {} # {species: {CBH scheme products}}
+        highest_rung_per_molec = []
+        for species in species_list:
+            cbh = CBH.buildCBH(species, saturate, allow_overshoot=allow_overshoot) # generate CBH scheme
+            # add to dictionary / lists
+            all_rcts[species] = cbh.cbh_rcts
+            all_pdts[species] = cbh.cbh_pdts
+            highest_rung_per_molec.append(cbh.highest_cbh)
+        
+        # Find the highest CBH rung of all the CBH schemes
+        highest_rung = max(highest_rung_per_molec)
+
+        dfs = [] # initialize DataFrame list
+        # Cycle through each CBH rung
+        for rung in range(highest_rung+1):
+            df = {}
+            # Cycle through each species in species_list
+            for species in species_list:
+                if rung <= max(all_pdts[species].keys()):
+                    df[species] = all_pdts[species][rung]
+                    df[species].update((precursor, coeff * -1) for precursor,coeff in all_rcts[species][rung].items())
+                    if include_target:
+                        df[species].update({species:-1})
+            dfs.append(pd.DataFrame(df).fillna(0).T)
+        return dfs
