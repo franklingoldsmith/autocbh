@@ -169,37 +169,59 @@ class TN:
                 self._build_recurs(s, highest_rung)
 
 
-    def visualize(self, figsize:tuple=(24,8), save_fig_path:str=None):
+    def visualize(self, relabel_node_mapping:dict=None, figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
         """
         Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
         Nodes are color-coded for the importance of a given molecule.
 
         ARGUMENTS
         ---------
+        :relabel_node_mapping:  [dict] (default=None)
+                Dictionary that maps SMILES strings to an alternative name.
+                e.g.) {C(F)(F) : ch2cf2}
+        
         :figsize:       [tuple] (default=(24,8))
                 The (width, height) of the pyplot figure.
         
+        :title:         [str] (default=None)
+                Title to print on the plot.
+        
         :save_fig_path: [str] (default=None)
                 The local path to save figure to.
+        
+        :dpi:   [float or int] (default=None)
+                The picture quality "dots per inch" to save figure.
+                Will save image at this quality, but will not show up in
+                the output of this method.
+
+        :label_font_size:   [int] (default=12)
+                Font size of node labels on the plot.
 
         RETURNS
         -------
         None
         """
+        if relabel_node_mapping and isinstance(relabel_node_mapping, dict):
+            graph = nx.relabel_nodes(self.graph, relabel_node_mapping)
+        else:
+            graph = self.graph
+
         ax = plt.figure(figsize=figsize)
-        pos = graphviz_layout(self.graph, prog='dot')
-        edge_cmap = plt.cm.Accent
+        pos = graphviz_layout(graph, prog='dot')
+        edge_cmap = plt.cm.Dark2
         node_cmap = plt.cm.Blues
+        if title:
+            plt.title(title, fontsize=30)
+        nx.draw(graph, pos, with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=[graph[u][v]['rung'] for u,v in graph.edges], edge_cmap=edge_cmap)
 
-        nx.draw(self.graph, pos, with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=[self.graph[u][v]['rung'] for u,v in self.graph.edges], edge_cmap=edge_cmap)
-
-        node_colors = [v if v < len(self.graph.nodes) else len(self.graph.nodes) for v in nx.get_node_attributes(self.graph, 'weight').values()]
+        node_colors = [v if v < len(graph.nodes) else len(graph.nodes) for v in nx.get_node_attributes(graph, 'weight').values()]
         
-        nx.draw_networkx_nodes(self.graph, pos=pos, node_size=0)
+        nx.draw_networkx_nodes(graph, pos=pos, node_size=0)
         
-        labels = nx.draw_networkx_labels(self.graph, pos=pos, 
-                                        labels={node:node for node in self.graph.nodes.keys()},
-                                        bbox=dict(edgecolor='black', boxstyle='round,pad=0.5'))
+        labels = nx.draw_networkx_labels(graph, pos=pos, 
+                                        labels={node:node for node in graph.nodes.keys()},
+                                        bbox=dict(edgecolor='black', boxstyle='round,pad=0.5'),
+                                        font_size=label_font_size)
 
         # node color
         color_scale = 0.2
@@ -211,15 +233,17 @@ class TN:
         # plot node colorbar (weight)
         norm = colors.Normalize(min(node_colors)+color_scale*max(node_colors), max(node_colors)+color_scale*max(node_colors), clip=True)
         cbar = ax.figure.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=node_cmap), pad=0.005)
-        cbar.set_label(label=f'Usage Density (not shown {max(node_colors)}+)', size=20)
+        cbar.set_label(label=f'Usage Density ({max(node_colors)}+ not shown)', size=20)
         cbar.ax.tick_params(labelsize=20)
 
         # plot edge colorbar (weight)
-        edge_cmap_bounds = np.array(list(set(nx.get_edge_attributes(self.graph, 'rung').values())))
+        edge_cmap_bounds = np.array(list(set(nx.get_edge_attributes(graph, 'rung').values())))
         edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
         cbar = ax.figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05)
         cbar.set_label(label='CBH Rung', size=20)
         cbar.ax.tick_params(labelsize=20)
-        if save_fig_path:
+        if save_fig_path and not dpi:
             plt.savefig(save_fig_path)
+        elif save_fig_path and dpi:
+            plt.savefig(save_fig_path, dpi=dpi)
         plt.show()
