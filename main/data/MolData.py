@@ -310,7 +310,7 @@ def load_rankings(file=''):
     return rephrase
 
 
-def generate_alias_file(folder_path: str):
+def generate_alias_file(folder_path:str, save_folder:str=None):
     """
     Generate a file that contains the various aliases
     of molecules.
@@ -334,7 +334,11 @@ def generate_alias_file(folder_path: str):
                         aliases[a] = Chem.CanonSmiles(m['smiles'])
                 
     # TODO: save to a file
-    with open('alias.yaml', 'w') as f:
+    if save_folder:
+        f_path = os.path.join(save_folder, 'alias.yaml')
+    else:
+        f_path = 'alias.yaml'
+    with open(f_path, 'w') as f:
         yaml.dump(aliases, f)
 
     return aliases
