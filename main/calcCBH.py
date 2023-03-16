@@ -148,7 +148,7 @@ class calcCBH:
         self.error_messages = {}
 
 
-    def calc_Hf(self, saturate:list=[1,9], priority:str="abs_coeff", max_rung:int=None, alt_rxn_option:str=None):
+    def calc_Hf(self, saturate:list=[1,9], priority:str="abs_coeff", max_rung:int=None, alt_rxn_option:str=None, surface_smiles=None):
         """
         Calculate the heats of formation of species that do not have reference 
         values using the highest possible CBH scheme with the best possible level 
@@ -207,6 +207,11 @@ class calcCBH:
                     - "include" (priority)
                         Included alternative reactions and will follow CBH priority 
                         protocol. 
+        
+        :surface_smiles:    [str] (default=None)
+                Valid SMILES string representing the surface atom that the given 
+                molecule is adsorbed to or physiosorbed to. Must be a single atom.
+                i.e., '[Pt]'
 
         RETURN
         ------
@@ -245,6 +250,20 @@ class calcCBH:
                     KeyError("Provided int of saturation element is not present in Periodic Table.")
             else:
                 TypeError("Elements within saturation list must be int or str.")
+        
+        if surface_smiles:
+            try:
+                surface_smiles = CanonSmiles(surface_smiles)
+            except:
+                raise ValueError(f'Arg "surface_smiles" must be a valid SMILES string. Instead, "{surface_smiles}" was given.')
+            # make sure surface smiles is just an element
+            try:
+                ptable.GetAtomicNumber(surface_smiles.replace('[','').replace(']',''))
+            except:
+                raise ValueError(f'Arg "surface_smiles" must be an element. Instead, "{surface_smiles}" was given.')
+            self.surface_smiles = surface_smiles
+        else:
+            self.surface_smiles=None
 
         def choose_best_method_and_assign(Hrxn_d:dict, Hf_d:dict, label:str):
             """Chooses best method then assigns calculated values to self.energies dataframe."""
@@ -313,7 +332,7 @@ class calcCBH:
                         cbhs = []
                         cbhs_rungs = []
                         for i, sat in enumerate(saturate_nums):
-                            cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
+                            cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True, surface_smiles=self.surface_smiles))
                             if max_rung is not None:
                                 rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
                             else:
@@ -383,7 +402,7 @@ class calcCBH:
                         cbhs = []
                         cbhs_rungs = []
                         for i, sat in enumerate(saturate_nums):
-                            cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
+                            cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True, surface_smiles=self.surface_smiles))
                             if max_rung is not None:
                                 rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
                             else:
@@ -461,7 +480,7 @@ class calcCBH:
             cbhs = []
             cbhs_rungs = []
             for i, sat in enumerate(saturate_nums):
-                cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True))
+                cbhs.append(CBH.buildCBH(s, sat, allow_overshoot=True, surface_smiles=self.surface_smiles))
                 if max_rung is not None:
                     rung = max_rung if max_rung <= cbhs[-1].highest_cbh else cbhs[-1].highest_cbh
                 else:
@@ -758,7 +777,7 @@ class calcCBH:
         rxns = {}
         for i, sat in enumerate(sats):
             if sat != 'alt':
-                cbh = CBH.buildCBH(s, sat, allow_overshoot=True)
+                cbh = CBH.buildCBH(s, sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
                 rxns[i] = self._cbh_to_rxn(s, cbh, rungs[i])
             else:
                 rxns[i] = {s: copy(self.alternative_rxn[s][rungs[i]])}
@@ -834,7 +853,7 @@ class calcCBH:
         rxns = {}
         for i, sat in enumerate(sats):
             if sat != 'alt':
-                cbh = CBH.buildCBH(s, sat, allow_overshoot=True)
+                cbh = CBH.buildCBH(s, sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
                 rxns[i] = self._cbh_to_rxn(s, cbh, rungs[i])
             else:
                 rxns[i] = {s: copy(self.alternative_rxn[s][rungs[i]])}
@@ -931,7 +950,7 @@ class calcCBH:
         saturate_sym = ptable.GetElementSymbol(saturate)
 
         s = CanonSmiles(s) # standardize SMILES
-        s_cbh = CBH.buildCBH(s, saturate)
+        s_cbh = CBH.buildCBH(s, saturate, surface_smiles=self.surface_smiles)
 
         Hf = {}
         Hrxn = {}
@@ -1255,7 +1274,7 @@ class calcCBH:
 
                         if p_sat != 'alt':
 
-                            p = CBH.buildCBH(precur, p_sat, allow_overshoot=True)
+                            p = CBH.buildCBH(precur, p_sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
                             try: 
                                 self.energies.loc[list(p.cbh_pdts[p_rung].keys()) + list(p.cbh_rcts[p_rung].keys())]
                                 # To the original equation, add the precursor's precursors (rcts + pdts) and delete the precursor from the orig_rxn
@@ -1564,7 +1583,7 @@ class calcCBH:
 
 
     @staticmethod
-    def generate_CBH_coeffs(species_list: list, saturate: int=1, allow_overshoot=False, include_target=True) -> list:
+    def generate_CBH_coeffs(species_list: list, saturate: int=1, allow_overshoot=False, surface_smiles:str=None, include_target=True) -> list:
         """
         Generate a list of Pandas DataFrame objects that hold the coefficients 
         for every precursor created for CBH schemes of each target species.
@@ -1590,8 +1609,13 @@ class calcCBH:
                     False - CBH-0-F
                     True - CBH-1-F (even though C2F6 is generated as a precursor)
 
-        :include_target:    [bool] (default=True) Include the target species with
-                                a coefficient of -1
+        :surface_smiles:    [str] (default=None)
+                Valid SMILES string representing the surface atom that the given 
+                molecule is adsorbed to or physiosorbed to. Must be a single atom.
+                i.e., '[Pt]'
+
+        :include_target:    [bool] (default=True) 
+                Include the target species with a coefficient of -1
 
         RETURNS
         -------
@@ -1616,7 +1640,7 @@ class calcCBH:
         all_pdts = {} # {species: {CBH scheme products}}
         highest_rung_per_molec = []
         for species in species_list:
-            cbh = CBH.buildCBH(species, saturate, allow_overshoot=allow_overshoot) # generate CBH scheme
+            cbh = CBH.buildCBH(species, saturate, allow_overshoot=allow_overshoot, surface_smiles=surface_smiles) # generate CBH scheme
             # add to dictionary / lists
             all_rcts[species] = cbh.cbh_rcts
             all_pdts[species] = cbh.cbh_pdts
