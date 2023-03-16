@@ -7,6 +7,8 @@ from networkx.drawing.nx_agraph import graphviz_layout
 from matplotlib import colors
 import sys
 sys.path.append('.')
+import os
+import yaml
 
 
 class TN:
@@ -169,17 +171,23 @@ class TN:
                 self._build_recurs(s, highest_rung)
 
 
-    def visualize(self, relabel_node_mapping:dict=None, figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
+    def visualize(self, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
+                  figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
         """
         Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
         Nodes are color-coded for the importance of a given molecule.
 
         ARGUMENTS
         ---------
-        :relabel_node_mapping:  [dict] (default=None)
+        :relabel_node_mapping:  [dict or str] (default=None)
                 Dictionary that maps SMILES strings to an alternative name.
+                Or a path to a YAML file containing the mapping dictionary.
                 e.g.) {C(F)(F) : ch2cf2}
         
+        :reverse_relabel_node_mapping: [bool] (default=None)
+                Whether to reverse the provided dictionary in arg relabel_node_mapping.
+                Will map values to keys rather than keys to values.
+                
         :figsize:       [tuple] (default=(24,8))
                 The (width, height) of the pyplot figure.
         
@@ -202,7 +210,24 @@ class TN:
         None
         """
         if relabel_node_mapping and isinstance(relabel_node_mapping, dict):
-            graph = nx.relabel_nodes(self.graph, relabel_node_mapping)
+            if reverse_relabel_node_mapping:
+                    alias_rev = {v:k for k, v in relabel_node_mapping.items()}
+                    graph = nx.relabel_nodes(self.graph, alias_rev)
+            else:
+                graph = nx.relabel_nodes(self.graph, relabel_node_mapping)
+
+        elif relabel_node_mapping and isinstance(relabel_node_mapping, str):
+            if relabel_node_mapping[-5:] != '.yaml':
+                print(f'Not a vaild YAML file. Please check your input to arg "relabel_node_mapping": f{relabel_node_mapping}. Continuing without relabeling.')
+                graph = self.graph
+            elif os.path.isfile(relabel_node_mapping):
+                with open('data/alias_manual.yaml', 'r') as f:
+                    alias = yaml.safe_load(f)
+                if reverse_relabel_node_mapping:
+                    alias_rev = {v:k for k, v in alias.items()}
+                    graph = nx.relabel_nodes(self.graph, alias_rev)
+                else:
+                    graph = nx.relabel_nodes(self.graph, alias)
         else:
             graph = self.graph
 
