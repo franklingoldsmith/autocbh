@@ -9,22 +9,22 @@ import sys
 sys.path.append('.')
 import os
 import yaml
-
+import pandas as pd
 
 class TN:
 
-    def __init__(self, species:str or list, max_rung:int=100, saturate:int or str=1, surface_smiles:str=None, **kwargs):
+    def __init__(self, species:str or list or pd.DataFrame, max_rung:int=np.inf, saturate:int or str=1, surface_smiles:str=None):
         """
         Class to build and visualize thermochemical network.
         In other words, see what molecules depend on one another using the CBH method.
 
         ARGUMENTS
         ---------
-        :species:       [str or list(str)]
+        :species:       [str or list(str) or pandas DataFrame from CBH.buildCBH]
                     SMILES string or list of SMILES strings that contains the target species 
                     for which to generate a thermochemical network.
         
-        :max_rung:      [int] (default=100)
+        :max_rung:      [int] (default=np.inf)
                     Maximum CBH rung that you want for the largest target species.
                     If max_rung is greater than the highest possible CBH rung, that
                     CBH rung will be used.
@@ -34,12 +34,15 @@ class TN:
                     saturate the heavy atoms. Usually 'H' (1), but is also often 
                     'F' (9) or 'Cl' (17). Currently it only supports halogens. 
 
-         :surface_smiles:    [str] (default=None)
+        :surface_smiles:    [str] (default=None)
                     Valid SMILES string representing the surface atom that the given 
                     molecule is adsorbed to or physiosorbed to. Must be a single atom.
                     i.e., '[Pt]'
                     NOT INCLUDING THIS FOR ADSORBATES WILL RETURN MISLEADING TNs.
         """
+        
+        self.smiles2rung = {}
+        self.smiles2sat = {}
         
         # check species argument
         if isinstance(species, str):
@@ -52,11 +55,33 @@ class TN:
                 self.species = [Chem.CanonSmiles(smiles) for smiles in species]
             except:
                 raise NameError(f'Arg "species" must contain valid SMILES strings. Check input.')
+
+        elif isinstance(species, pd.DataFrame):
+            if 'source' not in species.columns:
+                raise NameError('Arg "energies_df" DataFrame must have the method of ∆Hf computation in a column named "source".')
+            smiles2source = dict(zip(list(species.index), species.loc[:,'source'].values.tolist()))
+            self.species = list(smiles2source.keys())
+
+            for s in self.species:
+                if len(smiles2source[s].split('//')) > 1:
+                    # CBH used
+                    if 'avg' in smiles2source[s].split('//')[0]:
+                        # ex. CBHavg-(N-S, N-S, N-alt)
+                        self.smiles2rung[s] = [float(sub.split('-')[0]) for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
+                        self.smiles2sat[s] = [sub.split('-')[1] for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
+                    else:
+                        # ex. CBH-N-S
+                        self.smiles2rung[s] = [float(smiles2source[s].split('//')[0].split('-')[1])]
+                        self.smiles2sat[s] = [smiles2source[s].split('//')[0].split('-')[2]]
+                else:
+                    # experimental
+                    self.smiles2rung[s] = [None]
+                    self.smiles2sat[s] = [None]
         else:
-            raise TypeError(f'Arg "species" must either be a valid SMILES string or a list containing valid SMILES strings. Instead {type(species)} was given.')
+            raise TypeError(f'Arg "species" must be a valid SMILES string, a list containing valid SMILES strings, or a DataFrame computed from calcCBH. Instead {type(species)} was given.')
 
         # check max_rung argument
-        if not isinstance(max_rung, int):
+        if not isinstance(max_rung, int) and max_rung != np.inf:
             raise TypeError(f'Arg "max_rung" must be an integer. Instead {type(max_rung)} was given.')
         elif max_rung < 0:
             raise NameError(f'Arg max_rung must be a non-negative number. Instead {max_rung} was given.')
@@ -81,13 +106,17 @@ class TN:
             
 
         self.surface_smiles = surface_smiles
+        if isinstance(species, (str, list)):
+            cbhs = [CBH.buildCBH(smiles, saturate=saturate, allow_overshoot=True, surface_smiles=surface_smiles) for smiles in self.species]
+            self.highest_rungs = [cbh.highest_cbh if cbh.highest_cbh <= self.max_rung else self.max_rung for cbh in cbhs]
         
-        self.cbhs = [CBH.buildCBH(smiles, saturate=saturate, allow_overshoot=True, surface_smiles=surface_smiles) for smiles in self.species]
-        self.highest_rungs = [cbh.highest_cbh if cbh.highest_cbh <= self.max_rung else self.max_rung for cbh in self.cbhs]
-        
-        all_smiles = [list(cbh.cbh_rcts[rung].keys()) + list(cbh.cbh_pdts[rung].keys()) for i, cbh in enumerate(self.cbhs) for rung in range(self.highest_rungs[i])]
+            all_smiles = [list(cbh.cbh_rcts[rung].keys()) + list(cbh.cbh_pdts[rung].keys()) for i, cbh in enumerate(cbhs) for rung in range(self.highest_rungs[i])]
 
-        self.all_smiles = list(set([smiles for sublist in all_smiles for smiles in sublist] + self.species))
+            self.all_smiles = list(set([smiles for sublist in all_smiles for smiles in sublist] + self.species))
+
+        elif isinstance(species, pd.DataFrame):
+            self.highest_rungs = [1]*len(self.species)
+            self.all_smiles = self.species
 
         self.index2smiles = {i : smiles for i, smiles in enumerate(self.all_smiles)}
         self.smiles2index = {v:k for k, v in self.index2smiles.items()}
@@ -114,11 +143,22 @@ class TN:
             species_index = self.smiles2index[smiles]
             # add node for target
             if not self.graph.has_node(species_index):
-                self.graph.add_node(species_index, weight=1)
-            else:
-                self.graph.nodes[species_index]['weight'] += 1
+                self.graph.add_node(species_index)
 
             self._build_recurs(smiles, self.highest_rungs[i])
+
+        # add num_ancestors attribute to nodes
+        remove_nodes = []
+        is_DAG = nx.is_directed_acyclic_graph(self.graph)
+        for n in self.graph:
+            if self.graph.in_degree(n) == 0 and self.graph.out_degree(n) == 0:
+                remove_nodes.append(n)
+            if is_DAG:
+                self.graph.nodes[n]['num_ancestors'] = len(nx.ancestors(self.graph, n))
+
+        # clean graph
+        #   remove nodes without any edges
+        self.graph.remove_nodes_from(remove_nodes)
 
         self.graph = nx.relabel_nodes(self.graph, self.index2smiles)
         return self.graph
@@ -144,31 +184,46 @@ class TN:
         
         if prev_cbh_rung == 0:
             return 
-        try:
-            cbh = CBH.buildCBH(smiles, saturate=self.saturate, allow_overshoot=True, surface_smiles=self.surface_smiles)
-        except KeyError:
-            return
+        
+        def _inner_loop(smiles, cbh, highest_rung):
+            species_index = self.smiles2index[smiles]
+            for precursors_dict in [cbh.cbh_pdts[highest_rung], cbh.cbh_rcts[highest_rung]]:
+                for s, coeff in precursors_dict.items():
+                    if s not in self.smiles2index.keys():
+                        self.smiles2index[s] = max(self.smiles2index.values()) + 1
+                        self.index2smiles[max(self.smiles2index.values())] = s
+                        self.all_smiles += [s]
 
-        highest_rung = cbh.highest_cbh if cbh.highest_cbh <= self.max_rung else self.max_rung
+                    precursor_index = self.smiles2index[s]
 
-        species_index = self.smiles2index[smiles]
-        for precursors_dict in [cbh.cbh_pdts[highest_rung], cbh.cbh_rcts[highest_rung]]:
-            for s, coeff in precursors_dict.items():
-                if s not in self.smiles2index.keys():
-                    self.smiles2index[s] = max(self.smiles2index.values()) + 1
-                    self.index2smiles[max(self.smiles2index.values())] = s
-                    self.all_smiles += [s]
+                    if not self.graph.has_node(precursor_index):
+                        self.graph.add_node(precursor_index)
 
-                precursor_index = self.smiles2index[s]
+                    if not self.graph.has_edge(species_index, precursor_index):
+                        self.graph.add_edge(species_index, precursor_index, rung=highest_rung)
 
-                if not self.graph.has_node(precursor_index):
-                    self.graph.add_node(precursor_index, weight=coeff)
-                else:
-                    self.graph.nodes[precursor_index]['weight'] += coeff
+                        self._build_recurs(s, highest_rung)
 
-                self.graph.add_edge(species_index, precursor_index, rung=highest_rung)
-                                
-                self._build_recurs(s, highest_rung)
+
+        if smiles in self.smiles2rung:            
+            for rung, sat in zip(self.smiles2rung[smiles], self.smiles2sat[smiles]):
+                if rung is None or sat is None:
+                    return
+
+                cbh = CBH.buildCBH(smiles, saturate=sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
+                highest_rung = rung if rung <= self.max_rung else self.max_rung
+
+                _inner_loop(smiles, cbh, highest_rung)
+        else:
+            try:
+                cbh = CBH.buildCBH(smiles, saturate=self.saturate, allow_overshoot=True, surface_smiles=self.surface_smiles)
+            except KeyError:
+                return
+
+            highest_rung = cbh.highest_cbh if cbh.highest_cbh <= self.max_rung else self.max_rung
+
+            _inner_loop(smiles, cbh, highest_rung)
+
 
 
     def visualize(self, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
@@ -231,19 +286,20 @@ class TN:
         else:
             graph = self.graph
 
-        ax = plt.figure(figsize=figsize)
+        # ax = plt.figure(figsize=figsize)
+        fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
         pos = graphviz_layout(graph, prog='dot')
         edge_cmap = plt.cm.Dark2
         node_cmap = plt.cm.Blues
         if title:
-            plt.title(title, fontsize=30)
-        nx.draw(graph, pos, with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=[graph[u][v]['rung'] for u,v in graph.edges], edge_cmap=edge_cmap)
+            plt.suptitle(title, fontsize=30)
+        nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=[graph[u][v]['rung'] for u,v in graph.edges], edge_cmap=edge_cmap)
 
-        node_colors = [v if v < len(graph.nodes) else len(graph.nodes) for v in nx.get_node_attributes(graph, 'weight').values()]
+        node_colors = [v for v in nx.get_node_attributes(graph, 'num_ancestors').values()]
         
         nx.draw_networkx_nodes(graph, pos=pos, node_size=0)
         
-        labels = nx.draw_networkx_labels(graph, pos=pos, 
+        labels = nx.draw_networkx_labels(graph, pos=pos, ax=axs[0],
                                         labels={node:node for node in graph.nodes.keys()},
                                         bbox=dict(edgecolor='black', boxstyle='round,pad=0.5'),
                                         font_size=label_font_size)
@@ -255,16 +311,16 @@ class TN:
             #manipulate indiviual text objects
             t.set_backgroundcolor(node_cmap(c-color_scale))
         
-        # plot node colorbar (weight)
-        norm = colors.Normalize(min(node_colors)+color_scale*max(node_colors), max(node_colors)+color_scale*max(node_colors), clip=True)
-        cbar = ax.figure.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=node_cmap), pad=0.005)
-        cbar.set_label(label=f'Usage Density ({max(node_colors)}+ not shown)', size=20)
+        # plot node colorbar (number of ancestors (ie. larger molecules))
+        norm = colors.Normalize(min(node_colors), max(node_colors), clip=True)
+        cbar = axs[0].figure.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=node_cmap), pad=0.05, cax=axs[1])
+        cbar.set_label(label=f'Number of Dependents', size=20)
         cbar.ax.tick_params(labelsize=20)
 
-        # plot edge colorbar (weight)
+        # plot edge colorbar (rung)
         edge_cmap_bounds = np.array(list(set(nx.get_edge_attributes(graph, 'rung').values())))
         edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
-        cbar = ax.figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05)
+        cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
         cbar.set_label(label='CBH Rung', size=20)
         cbar.ax.tick_params(labelsize=20)
         if save_fig_path and not dpi:
