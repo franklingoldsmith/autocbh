@@ -1,5 +1,6 @@
 .DS_Store
-main/data/molecule_data/
+autoCBH/data/molecule_data/
+*.pkl
 .vscode/
 
 # Byte-compiled / optimized / DLL files

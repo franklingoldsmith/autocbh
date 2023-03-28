@@ -1,29 +1,29 @@
 anl0:
-- zpe
-- core_0_qz
-- zpe_anharm
 - av5z
-- ccQ
-- core_X_tz
-- avqz
-- ci_NREL
-- ci_DK
-- zpe_harm
 - core_X_qz
-- core_0_tz
+- core_0_qz
+- core_X_tz
+- ci_DK
 - ccT
+- core_0_tz
+- zpe_harm
+- avqz
+- zpe
+- ci_NREL
+- ccQ
+- zpe_anharm
 b2plypd3:
 - b2plypd3_E0
 f12b:
-- f12b
 - b2plypd3_zpe
+- f12b
 m062x:
 - m062x_E0
 m062x_dnlpo:
-- m062x_dnlpo
 - m062x_zpe
+- m062x_dnlpo
 wb97xd:
 - wb97xd_E0
 wb97xd_dnlpo:
-- wb97xd_dnlpo
 - wb97xd_zpe
+- wb97xd_dnlpo
