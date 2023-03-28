@@ -11,7 +11,7 @@ import os
 import yaml
 import pandas as pd
 
-class TN:
+class thermochemical_network:
 
     def __init__(self, species:str or list or pd.DataFrame, max_rung:int=np.inf, saturate:int or str=1, surface_smiles:str=None):
         """
@@ -115,7 +115,7 @@ class TN:
             self.all_smiles = list(set([smiles for sublist in all_smiles for smiles in sublist] + self.species))
 
         elif isinstance(species, pd.DataFrame):
-            self.highest_rungs = [1]*len(self.species)
+            self.highest_rungs = [1]*len(self.species) # doesn't matter since not used directly
             self.all_smiles = self.species
 
         self.index2smiles = {i : smiles for i, smiles in enumerate(self.all_smiles)}
@@ -273,10 +273,10 @@ class TN:
 
         elif relabel_node_mapping and isinstance(relabel_node_mapping, str):
             if relabel_node_mapping[-5:] != '.yaml':
-                print(f'Not a vaild YAML file. Please check your input to arg "relabel_node_mapping": f{relabel_node_mapping}. Continuing without relabeling.')
+                print(f'Not a vaild YAML file (must end in .yaml). Please check your input to arg "relabel_node_mapping": f{relabel_node_mapping}. Continuing without relabeling.')
                 graph = self.graph
             elif os.path.isfile(relabel_node_mapping):
-                with open('data/alias_manual.yaml', 'r') as f:
+                with open(relabel_node_mapping, 'r') as f:
                     alias = yaml.safe_load(f)
                 if reverse_relabel_node_mapping:
                     alias_rev = {v:k for k, v in alias.items()}
@@ -323,6 +323,7 @@ class TN:
         cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
         cbar.set_label(label='CBH Rung', size=20)
         cbar.ax.tick_params(labelsize=20)
+        plt.tight_layout()
         if save_fig_path and not dpi:
             plt.savefig(save_fig_path)
         elif save_fig_path and dpi:

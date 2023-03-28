@@ -41,7 +41,7 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, methods: list=[], force_generate_database:bool=False, force_generate_alternative_rxn:bool=False, 
+    def __init__(self, methods: list=[], force_generate_database:str=None, force_generate_alternative_rxn:bool=False, 
                         dataframe_path:str=None, alternative_rxn_path:str=None):
         """
         ARGUMENTS
@@ -50,10 +50,10 @@ class calcCBH:
                             of HoF. If empty, use all available methods.
                             (default=[])
 
-        :force_generate_database:           [bool] (default=False)
+        :force_generate_database:           [str] (default=None)
                         Force the generation of the self.energies dataframe
                         from the folder containing individual species data
-                        in yaml files.
+                        in yaml files. Typically held at: 'data/molecule_data'
 
         :force_generate_alternative_rxn:    [bool] (default=False) 
                         Force the generation of an alternative reaction
@@ -114,7 +114,7 @@ class calcCBH:
         
         # Generate Database
         if force_generate_database:
-            self.energies = pd.DataFrame(generate_database('data/molecule_data')[0])[self.methods_keys+['source', 'DfH', 'DrxnH']]
+            self.energies = pd.DataFrame(generate_database(force_generate_database)[0])[self.methods_keys+['source', 'DfH', 'DrxnH']]
         else:
             if dataframe_path:
                 self.energies = pd.read_pickle(dataframe_path)
@@ -184,8 +184,8 @@ class calcCBH:
                 they will be averaged.
                 
             e.g.) CBH-1-H: CH3CF2CH3 + 3 CH4 --> 2 C2H6 + 2 CH3F
-            "abs_coeff":    val = 7
-            "rel_coeff":    val = 0
+            "abs_coeff":    val = |1 + 3 + 2 + 2| = 7
+            "rel_coeff":    val = 2 + 2 - (1 + 3) = 0
             "rung":         val = 1
 
 
@@ -278,7 +278,7 @@ class calcCBH:
         def simple_sort(x):
             """Sorting algorithm used for smallest to largest
             Computes the longest path across a molecule.
-            The np.inf condition us used to avoid any issues with
+            The np.inf condition is used to avoid any issues with
             physiosorbed species."""
             arr = np.array(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())
             return max(arr[arr < np.inf])
@@ -1148,12 +1148,11 @@ class calcCBH:
         test_rung   [int] The highest rung that does not fail
         """
 
-        # 1. check existance of all reactants in database
-        #   a. get precursors in a rung
-        #   b. get the sources of those precursors
         for rung in reversed(range(test_rung+1)):
+            # 1. check existance of all reactants in database
+            #   a. get precursors in a rung
+            #   b. get the sources of those precursors
             all_precursors = list(cbh_rcts[rung].keys()) + list(cbh_pdts[rung].keys())
-
             try:
                 sources = self.energies.loc[all_precursors, 'source'].values.tolist()
                 # if all values contributing to the energy of a precursor are NaN move down a rung

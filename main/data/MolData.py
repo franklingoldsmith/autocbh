@@ -1,5 +1,4 @@
 from rdkit import Chem
-from numpy import NaN
 import yaml
 import os
 import sys
@@ -258,7 +257,7 @@ def add_alternative_rxns_to_database(alternative_rxn_file:str, database_folder:s
     None
     """
 
-    with open('data/alternative_rxn.yaml', 'r') as f:
+    with open(alternative_rxn_file, 'r') as f:
         alternative_rxns = yaml.safe_load(f)
     for alt in alternative_rxns:
         alt = Chem.CanonSmiles(alt)
@@ -267,7 +266,7 @@ def add_alternative_rxns_to_database(alternative_rxn_file:str, database_folder:s
             with open(mol_file, 'r') as f:
                 mol = yaml.safe_load(f)
             if False in [isinstance(rank, (int, float)) for rank in alternative_rxns[alt]]:
-                raise TypeError('CBH rank must be a number')
+                raise TypeError('CBH rank must be a number.')
             for rank in alternative_rxns[alt]:
                 if 'alternative_rxn' not in mol:
                     mol['alternative_rxn'] = {}

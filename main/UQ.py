@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from calcCBH import calcCBH
 import CBH
 import os, sys
@@ -192,7 +191,7 @@ class uncertainty_quantification:
         # cycle through molecules from smallest to largest
         pbar = tqdm(sorted_species)
         for s in pbar:
-            pbar.set_description(f'Species: {s}')
+            pbar.set_description(f'Number of Species')
             i_s = self.calcCBH.energies.index.get_loc(s)
             weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[:, 1:], self.calcCBH.energies.index)
 
