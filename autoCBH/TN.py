@@ -226,7 +226,7 @@ class thermochemical_network:
 
 
 
-    def visualize(self, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
+    def visualize(self, graph=None, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
                   figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
         """
         Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
@@ -264,27 +264,36 @@ class thermochemical_network:
         -------
         None
         """
+        if not graph:
+            graph = self.graph.copy()
+        else:
+            graph = graph
+            is_DAG = nx.is_directed_acyclic_graph(graph)
+            for n in graph:
+                if is_DAG:
+                    graph.nodes[n]['num_ancestors'] = len(nx.ancestors(graph, n))
+
         if relabel_node_mapping and isinstance(relabel_node_mapping, dict):
             if reverse_relabel_node_mapping:
                     alias_rev = {v:k for k, v in relabel_node_mapping.items()}
-                    graph = nx.relabel_nodes(self.graph, alias_rev)
+                    graph = nx.relabel_nodes(graph, alias_rev)
             else:
-                graph = nx.relabel_nodes(self.graph, relabel_node_mapping)
+                graph = nx.relabel_nodes(graph, relabel_node_mapping)
 
         elif relabel_node_mapping and isinstance(relabel_node_mapping, str):
             if relabel_node_mapping[-5:] != '.yaml':
                 print(f'Not a vaild YAML file (must end in .yaml). Please check your input to arg "relabel_node_mapping": f{relabel_node_mapping}. Continuing without relabeling.')
-                graph = self.graph
+                graph = graph
             elif os.path.isfile(relabel_node_mapping):
                 with open(relabel_node_mapping, 'r') as f:
                     alias = yaml.safe_load(f)
                 if reverse_relabel_node_mapping:
                     alias_rev = {v:k for k, v in alias.items()}
-                    graph = nx.relabel_nodes(self.graph, alias_rev)
+                    graph = nx.relabel_nodes(graph, alias_rev)
                 else:
-                    graph = nx.relabel_nodes(self.graph, alias)
+                    graph = nx.relabel_nodes(graph, alias)
         else:
-            graph = self.graph
+            graph = graph
 
         # ax = plt.figure(figsize=figsize)
         fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
