@@ -5,7 +5,7 @@ import pandas as pd
 from numpy import nan, isnan
 from rdkit.Chem import MolFromSmiles, AddHs, CanonSmiles, GetPeriodicTable
 from data.molData import load_rankings, generate_database, generate_alternative_rxn_file
-from hrxnMethods import anl0_hrxn, sum_Hrxn
+from hrxnHelpers import anl0_hrxn, sum_Hrxn
 import os
 import yaml
 from itertools import compress
