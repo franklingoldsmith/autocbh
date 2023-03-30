@@ -226,7 +226,7 @@ class thermochemical_network:
 
 
 
-    def visualize(self, graph=None, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
+    def visualize(self, graph:nx.DiGraph=None, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
                   figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
         """
         Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
@@ -234,6 +234,13 @@ class thermochemical_network:
 
         ARGUMENTS
         ---------
+        :graph: [nx.DiGraph or None] (default=None)
+                If none, it uses the class attributed 'graph'. 
+                Otherwise, the user may specify a specific graph to visualize.
+                (typically a subgraph using thermochemical_network.descendent_subraph_of)
+                A directed acyclic graph (DAG) is expected.
+
+        
         :relabel_node_mapping:  [dict or str] (default=None)
                 Dictionary that maps SMILES strings to an alternative name.
                 Or a path to a YAML file containing the mapping dictionary.
@@ -266,75 +273,152 @@ class thermochemical_network:
         """
         if not graph:
             graph = self.graph.copy()
-        else:
-            graph = graph
-            is_DAG = nx.is_directed_acyclic_graph(graph)
-            for n in graph:
-                if is_DAG:
-                    graph.nodes[n]['num_ancestors'] = len(nx.ancestors(graph, n))
+        
+        visualize(graph, 
+                  relabel_node_mapping=relabel_node_mapping, 
+                  reverse_relabel_node_mapping=reverse_relabel_node_mapping,
+                  figsize=figsize,
+                  title=title,
+                  save_fig_path=save_fig_path,
+                  dpi=dpi,
+                  label_font_size=label_font_size)
 
-        if relabel_node_mapping and isinstance(relabel_node_mapping, dict):
+
+    def descendent_subgraph_of(self, smiles:str):
+        """
+        Returns the subgraph that only includes descendents of the 
+        specified species (including itself). 
+        This is useful to pair with thermochemical_network.visualize.
+
+        ARGUMENTS
+        ---------
+        :smiles:    [str]
+            The SMILES string of the root node to generate the subgraph.
+
+        RETURNS
+        -------
+        :subgraph:  [nx.DiGraph] 
+            Subgraph containing the specified node and its descendents.
+        """
+
+        descendants = nx.descendants(self.graph, smiles)
+        descendants.add(smiles)
+        subgraph = self.graph.subgraph(descendants).copy()
+        return subgraph
+    
+
+def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
+                figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
+    """
+    Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
+    Nodes are color-coded for the importance of a given molecule.
+
+    ARGUMENTS
+    ---------
+    :graph: [nx.DiGraph or None] (default=None)
+            If none, it uses the class attributed 'graph'. 
+            Otherwise, the user may specify a specific graph to visualize.
+            (typically a subgraph using thermochemical_network.descendent_subraph_of)
+            A directed acyclic graph (DAG) is expected.
+
+    
+    :relabel_node_mapping:  [dict or str] (default=None)
+            Dictionary that maps SMILES strings to an alternative name.
+            Or a path to a YAML file containing the mapping dictionary.
+            e.g.) {C(F)(F) : ch2cf2}
+    
+    :reverse_relabel_node_mapping: [bool] (default=None)
+            Whether to reverse the provided dictionary in arg relabel_node_mapping.
+            Will map values to keys rather than keys to values.
+            
+    :figsize:       [tuple] (default=(24,8))
+            The (width, height) of the pyplot figure.
+    
+    :title:         [str] (default=None)
+            Title to print on the plot.
+    
+    :save_fig_path: [str] (default=None)
+            The local path to save figure to.
+    
+    :dpi:   [float or int] (default=None)
+            The picture quality "dots per inch" to save figure.
+            Will save image at this quality, but will not show up in
+            the output of this method.
+
+    :label_font_size:   [int] (default=12)
+            Font size of node labels on the plot.
+
+    RETURNS
+    -------
+    None
+    """
+
+    is_DAG = nx.is_directed_acyclic_graph(graph)
+    for n in graph:
+        if is_DAG:
+            graph.nodes[n]['num_ancestors'] = len(nx.ancestors(graph, n))
+
+    if relabel_node_mapping and isinstance(relabel_node_mapping, dict):
+        if reverse_relabel_node_mapping:
+                alias_rev = {v:k for k, v in relabel_node_mapping.items()}
+                graph = nx.relabel_nodes(graph, alias_rev)
+        else:
+            graph = nx.relabel_nodes(graph, relabel_node_mapping)
+
+    elif relabel_node_mapping and isinstance(relabel_node_mapping, str):
+        if relabel_node_mapping[-5:] != '.yaml':
+            print(f'Not a vaild YAML file (must end in .yaml). Please check your input to arg "relabel_node_mapping": f{relabel_node_mapping}. Continuing without relabeling.')
+            graph = graph
+        elif os.path.isfile(relabel_node_mapping):
+            with open(relabel_node_mapping, 'r') as f:
+                alias = yaml.safe_load(f)
             if reverse_relabel_node_mapping:
-                    alias_rev = {v:k for k, v in relabel_node_mapping.items()}
-                    graph = nx.relabel_nodes(graph, alias_rev)
+                alias_rev = {v:k for k, v in alias.items()}
+                graph = nx.relabel_nodes(graph, alias_rev)
             else:
-                graph = nx.relabel_nodes(graph, relabel_node_mapping)
+                graph = nx.relabel_nodes(graph, alias)
 
-        elif relabel_node_mapping and isinstance(relabel_node_mapping, str):
-            if relabel_node_mapping[-5:] != '.yaml':
-                print(f'Not a vaild YAML file (must end in .yaml). Please check your input to arg "relabel_node_mapping": f{relabel_node_mapping}. Continuing without relabeling.')
-                graph = graph
-            elif os.path.isfile(relabel_node_mapping):
-                with open(relabel_node_mapping, 'r') as f:
-                    alias = yaml.safe_load(f)
-                if reverse_relabel_node_mapping:
-                    alias_rev = {v:k for k, v in alias.items()}
-                    graph = nx.relabel_nodes(graph, alias_rev)
-                else:
-                    graph = nx.relabel_nodes(graph, alias)
-        else:
-            graph = graph
 
-        # ax = plt.figure(figsize=figsize)
-        fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
-        pos = graphviz_layout(graph, prog='dot')
-        edge_cmap = plt.cm.Dark2
-        node_cmap = plt.cm.Blues
-        if title:
-            plt.suptitle(title, fontsize=30)
-        nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=[graph[u][v]['rung'] for u,v in graph.edges], edge_cmap=edge_cmap)
+    # ax = plt.figure(figsize=figsize)
+    fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
+    pos = graphviz_layout(graph, prog='dot')
+    edge_cmap = plt.cm.Dark2
+    node_cmap = plt.cm.Blues
+    if title:
+        plt.suptitle(title, fontsize=30)
+    nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=[graph[u][v]['rung'] for u,v in graph.edges], edge_cmap=edge_cmap)
 
-        node_colors = [v for v in nx.get_node_attributes(graph, 'num_ancestors').values()]
-        
-        nx.draw_networkx_nodes(graph, pos=pos, node_size=0)
-        
-        labels = nx.draw_networkx_labels(graph, pos=pos, ax=axs[0],
-                                        labels={node:node for node in graph.nodes.keys()},
-                                        bbox=dict(edgecolor='black', boxstyle='round,pad=0.5'),
-                                        font_size=label_font_size)
+    node_colors = [v for v in nx.get_node_attributes(graph, 'num_ancestors').values()]
+    
+    nx.draw_networkx_nodes(graph, pos=pos, node_size=0)
+    
+    labels = nx.draw_networkx_labels(graph, pos=pos, ax=axs[0],
+                                    labels={node:node for node in graph.nodes.keys()},
+                                    bbox=dict(edgecolor='black', boxstyle='round,pad=0.5'),
+                                    font_size=label_font_size)
 
-        # node color
-        color_scale = 0.2
-        normalize_node_colors = (np.array(node_colors) - min(node_colors))/(max(node_colors) - min(node_colors))
-        for t, c in zip(labels.values(), normalize_node_colors):
-            #manipulate indiviual text objects
-            t.set_backgroundcolor(node_cmap(c-color_scale))
-        
-        # plot node colorbar (number of ancestors (ie. larger molecules))
-        norm = colors.Normalize(min(node_colors), max(node_colors), clip=True)
-        cbar = axs[0].figure.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=node_cmap), pad=0.05, cax=axs[1])
-        cbar.set_label(label=f'Number of Dependents', size=20)
-        cbar.ax.tick_params(labelsize=20)
+    # node color
+    color_scale = 0.2
+    normalize_node_colors = (np.array(node_colors) - min(node_colors))/(max(node_colors) - min(node_colors))
+    for t, c in zip(labels.values(), normalize_node_colors):
+        #manipulate indiviual text objects
+        t.set_backgroundcolor(node_cmap(c-color_scale))
+    
+    # plot node colorbar (number of ancestors (ie. larger molecules))
+    norm = colors.Normalize(min(node_colors), max(node_colors), clip=True)
+    cbar = axs[0].figure.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=node_cmap), pad=0.05, cax=axs[1])
+    cbar.set_label(label=f'Number of Dependents', size=20)
+    cbar.ax.tick_params(labelsize=20)
 
-        # plot edge colorbar (rung)
-        edge_cmap_bounds = np.array(list(set(nx.get_edge_attributes(graph, 'rung').values())))
-        edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
-        cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
-        cbar.set_label(label='CBH Rung', size=20)
-        cbar.ax.tick_params(labelsize=20)
-        plt.tight_layout()
-        if save_fig_path and not dpi:
-            plt.savefig(save_fig_path)
-        elif save_fig_path and dpi:
-            plt.savefig(save_fig_path, dpi=dpi)
-        plt.show()
+    # plot edge colorbar (rung)
+    edge_cmap_bounds = np.array(list(set(nx.get_edge_attributes(graph, 'rung').values())))
+    edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
+    cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
+    cbar.set_label(label='CBH Rung', size=20)
+    cbar.ax.tick_params(labelsize=20)
+    plt.tight_layout()
+    if save_fig_path and not dpi:
+        plt.savefig(save_fig_path)
+    elif save_fig_path and dpi:
+        plt.savefig(save_fig_path, dpi=dpi)
+    plt.show()
