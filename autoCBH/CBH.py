@@ -156,6 +156,8 @@ class buildCBH:
                 #     Saturation atom forms a diatomic molecule (coeff_physiosorbed)
                 #     Only one saturation atom adsorbs to the surface (coeff_adsorbed)
                 
+                if type(saturate) == str:
+                    saturate = Chem.GetPeriodicTable().GetAtomicNumber(saturate)
                 saturate_sym = Chem.GetPeriodicTable().GetElementSymbol(saturate)
 
                 # rcts - pdts for RHS of the linear system
