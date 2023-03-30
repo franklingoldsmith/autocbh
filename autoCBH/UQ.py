@@ -182,11 +182,8 @@ class uncertainty_quantification:
 
         self.simulation_results[self.non_nan_species_ind, 1:] = copy(self.init_simulation_matrix)
 
-        # sort criteria
-        simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
-
         # sorted list of molecules that don't have any reference values
-        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
+        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=self.simple_sort)
 
         # cycle through molecules from smallest to largest
         pbar = tqdm(sorted_species)
@@ -217,15 +214,12 @@ class uncertainty_quantification:
         self.calcCBH.calc_Hf(self.saturate, self.priority, self.max_rung, self.alt_rxn_option)
         self.simulation_results[0,:] = self.calcCBH.energies.loc[:, 'DfH'].values
 
-        # sort criteria
-        simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
-
         pbar = tqdm(range(0, self.init_simulation_matrix.shape[1]))
         for i in pbar:
             pbar.set_description(f'Sample {i+1}')
             self.calcCBH.energies.loc[self.non_nan_species, 'DfH'] = self.init_simulation_matrix[:,i]
             # sorted list of molecules that don't have any reference values
-            sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
+            sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=self.simple_sort)
 
             # cycle through molecules from smallest to largest
             for s in sorted_species:
@@ -291,9 +285,7 @@ class uncertainty_quantification:
         
         combos = list(product(alt_rxn_option_list, priority))
 
-        # sort criteria
-        simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
-        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
+        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=self.simple_sort)
 
         self.simulation_results = np.zeros((len(combos), len(self.calcCBH.energies.index.values), self.num_simulations + 1))
 
@@ -341,8 +333,7 @@ class uncertainty_quantification:
         sats = [[sat] for sat in sat_list]
         sats.append(sat_list)
 
-        simple_sort = lambda x: (max(max(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())))
-        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=simple_sort)
+        sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=self.simple_sort)
 
         self.simulation_results = np.zeros((len(sats), len(self.calcCBH.energies.index.values), self.num_simulations + 1))
 
@@ -365,6 +356,15 @@ class uncertainty_quantification:
             self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
 
         return sats
+    
+
+    def simple_sort(self, x):
+        """Sorting algorithm used for smallest to largest
+        Computes the longest path across a molecule.
+        The np.inf condition is used to avoid any issues with
+        physiosorbed species."""
+        arr = np.array(CBH.mol2graph(AddHs(MolFromSmiles(x))).shortest_paths())
+        return max(arr[arr < np.inf])
 
 
 class HiddenPrints:
