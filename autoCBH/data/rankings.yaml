@@ -17,10 +17,12 @@
 # 0     | General Estimate (Never used in generation)
 
 ATcT: 1
+exp: 1
 anl0: 2
 f12b: 3
-m062x_dnlpo: 4
-wb97xd_dnlpo: 4
+m062x_dlpno: 4
+wb97xd_dlpno: 4
 b2plypd3: 6
 m062x: 7
 wb97xd: 7
+beef_vdw: 8
