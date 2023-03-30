@@ -64,6 +64,30 @@ class calcCBH:
                         containing a previously saved self.energies dataframe.
         """
 
+        # Generate Database
+        if force_generate_database:
+            self.energies = pd.DataFrame(generate_database(force_generate_database)[0])
+        else:
+            if dataframe_path:
+                self.energies = pd.read_pickle(dataframe_path)
+            else:
+                constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
+                # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
+                # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
+                self.energies = pd.read_pickle('./data/energies_Franklin_nan.pkl')
+                # self.energies = generate_database('data/molecule_data/')[0] # something is different
+
+                self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
+                # sort by num C then by SMILES length
+                max_C = max([i.count('C') for i in self.energies.index])
+                self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
+                ###
+                # This stuff should go into test cases
+                # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
+                # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
+                # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
+                # 'm062x_E0','m062x_dlpno','wb97xd_zpe','wb97xd_E0','wb97xd_dlpno']] = nan
+
         # Load the methods to use
         with open('data/methods_keys.yaml', 'r') as f:
             self.methods_keys_dict = yaml.safe_load(f)
@@ -72,11 +96,20 @@ class calcCBH:
 
         if len(methods)==0:
             # use all available methods in methods_keys dictionary
-            self.methods = list(self.methods_keys_dict.keys())
+            # self.methods = list(self.methods_keys_dict.keys())
+            self.methods = []
             self.methods_keys = []
+            methods_to_remove = []
             for m in self.methods_keys_dict:
-                self.methods_keys.extend(self.methods_keys_dict[m])
-                self.methods_keys = list(set(self.methods_keys))
+                if all([_m in self.energies.columns for _m in self.methods_keys_dict[m]]):
+                    self.methods_keys.extend(self.methods_keys_dict[m])
+                    self.methods_keys = list(set(self.methods_keys))
+                else:
+                    methods_to_remove.append(m)
+            if len(self.methods_keys) == 0:
+                raise KeyError('None of the method keys found in "data/methods_keys.yaml" were found in the provided DataFrame columns. \nPlease ensure that correct keys are in either the YAML file or the DataFrame.')
+            for m in methods_to_remove:
+                del self.methods_keys_dict[m]
         else:
             methods_keys_list = list(self.methods_keys_dict.keys())
             for m in methods_keys_list:
@@ -87,6 +120,9 @@ class calcCBH:
             for m in self.methods:
                 self.methods_keys.extend(self.methods_keys_dict[m])
                 self.methods_keys = list(set(self.methods_keys))
+
+        if force_generate_database:
+            self.energies = self.energies[self.methods_keys+['source', 'DfH', 'DrxnH']]
         
         # Load rankings
         self.rankings = load_rankings('data/rankings.yaml')
@@ -111,30 +147,6 @@ class calcCBH:
         for k,l in self.rankings.items():
             for v in l:
                 self.rankings_rev[v] = k
-        
-        # Generate Database
-        if force_generate_database:
-            self.energies = pd.DataFrame(generate_database(force_generate_database)[0])[self.methods_keys+['source', 'DfH', 'DrxnH']]
-        else:
-            if dataframe_path:
-                self.energies = pd.read_pickle(dataframe_path)
-            else:
-                constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
-                # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
-                # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
-                self.energies = pd.read_pickle('./data/energies_Franklin_nan.pkl')
-                # self.energies = generate_database('data/molecule_data/')[0] # something is different
-
-                self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
-                # sort by num C then by SMILES length
-                max_C = max([i.count('C') for i in self.energies.index])
-                self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
-                ###
-                # This stuff should go into test cases
-                # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
-                # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
-                # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
-                # 'm062x_E0','m062x_dnlpo','wb97xd_zpe','wb97xd_E0','wb97xd_dnlpo']] = nan
 
         if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn and not alternative_rxn_path:
             generate_alternative_rxn_file('data/molecule_data', 'alternative_rxn')
@@ -148,7 +160,7 @@ class calcCBH:
         self.error_messages = {}
 
 
-    def calc_Hf(self, saturate:list=[1,9], priority:str="abs_coeff", max_rung:int=None, alt_rxn_option:str=None, surface_smiles=None):
+    def calc_Hf(self, saturate:list=[1], priority:str="abs_coeff", max_rung:int=None, alt_rxn_option:str=None, surface_smiles=None):
         """
         Calculate the heats of formation of species that do not have reference 
         values using the highest possible CBH scheme with the best possible level 
@@ -157,10 +169,10 @@ class calcCBH:
         ARGUMENTS
         ---------
         :self:
-        :saturate:      [list(int) or list(str)] List of integers representing the
-                            atomic numbers of the elements to saturate precursor 
-                            species. String representations of the elements 
-                            also works. (default=[1,9] for hydrogen and fluorine)
+        :saturate:      [list(int) or list(str)] (default=[1] for hydrogen)
+                List of integers representing the atomic numbers of the elements to 
+                saturate precursor species. String representations of the elements 
+                also works.
 
         :priority:      [str] (default="abs_coeff")
                     Rung selection criteria.
@@ -926,7 +938,7 @@ class calcCBH:
         return weighted_Hrxn, weighted_Hf
 
 
-    def calc_Hf_allrungs(self, s: str, saturate: int or str=1) -> tuple:
+    def calc_Hf_allrungs(self, s: str, saturate: int or str=1, surface_smiles:str=None) -> tuple:
         """
         Calculates the Hf of a given species at each CBH rung.
         Assumes that calc_Hf has already been run or the database
@@ -935,7 +947,15 @@ class calcCBH:
         ARGUMENTS
         ---------
         :s:         [str] SMILES string of the target species.
-        :saturate:  [int or str] Atomic number of saturation element.
+
+        :saturate:  [int or str] (default=1)
+                Atomic number of saturation element.
+
+        :surface_smiles:    [str] (default=None)
+
+                Valid SMILES string representing the surface atom that the given 
+                molecule is adsorbed to or physiosorbed to. Must be a single atom.
+                i.e., '[Pt]'
 
         RETURN
         ------
@@ -950,14 +970,14 @@ class calcCBH:
         saturate_sym = ptable.GetElementSymbol(saturate)
 
         s = CanonSmiles(s) # standardize SMILES
-        s_cbh = CBH.buildCBH(s, saturate, surface_smiles=self.surface_smiles)
+        s_cbh = CBH.buildCBH(s, saturate, surface_smiles=surface_smiles)
 
         Hf = {}
         Hrxn = {}
         if s in self.error_messages:
             start_err_len = len(self.error_messages[s])
         else:
-            start_err_len = None
+            start_err_len = 0
 
         for rung in range(s_cbh.highest_cbh+1):
             try:
@@ -969,7 +989,13 @@ class calcCBH:
                 test_rung = self._check_rung_usability(s, rung, s_cbh.cbh_rcts, s_cbh.cbh_pdts, saturate_sym)
                 
                 rxn = self._cbh_to_rxn(s, s_cbh, rung)
-                Hrxn[rung], Hf[rung] = self.Hf(s, rxn, skip_precursor_check=True)
+                
+                check_precursors_exist = [p in self.energies.index.values for p in rxn[s].keys()]
+                if all(check_precursors_exist):
+                    Hrxn[rung], Hf[rung] = self.Hf(s, rxn, skip_precursor_check=True)
+                else:
+                    continue
+
             except TypeError:
                 raise TypeError(f'Cannot compute CBH-{rung}')
 
@@ -1589,8 +1615,6 @@ class calcCBH:
 
         ARGUMENTS
         ---------
-        :self:              [calcCBH] object
-
         :species_list:      [list] List of SMILES strings with target molecules.
 
         :saturate:          [int or str] Integer representing the atomic number 
