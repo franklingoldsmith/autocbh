@@ -617,7 +617,7 @@ class buildCBH:
 
         # Visualize reaction without atom indices
         # Create pandas df of reactant and products
-        max_num_mols = max([len(v) for v in self.cbh_pdts.values()]+[len(v) for v in self.cbh_rcts.values()])
+        max_num_mols = max([len(v) for v in self.cbh_pdts.values()]+[len(v) + 1 if i==0 else len(v) for i, v in enumerate(self.cbh_rcts.values())])
 
         rct_df = DataFrame(self.cbh_rcts[cbh_level].items(), columns=['smiles', 'num'])
         if self.smiles_ads:
