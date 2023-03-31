@@ -2,8 +2,8 @@
 # Test Suite for CBH.py #
 #########################
 
-import main.CBH as CBH
-from main.CBH import mol2graph, graph2mol, add_dicts
+import autoCBH.CBH as CBH
+from autoCBH.CBH import mol2graph, graph2mol, add_dicts
 from rdkit.Chem import MolFromSmiles
 from rdkit import Chem
 from pytest import raises
