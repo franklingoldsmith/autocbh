@@ -10,17 +10,18 @@ sys.path.append('.')
 import os
 import yaml
 import pandas as pd
+import calcCBH
 
 class thermochemical_network:
 
-    def __init__(self, species:str or list or pd.DataFrame, max_rung:int=np.inf, saturate:int or str=1, surface_smiles:str=None):
+    def __init__(self, species:str or list or calcCBH.calcCBH, max_rung:int=np.inf, saturate:int or str=1, surface_smiles:str=None):
         """
         Class to build and visualize thermochemical network.
         In other words, see what molecules depend on one another using the CBH method.
 
         ARGUMENTS
         ---------
-        :species:       [str or list(str) or pandas DataFrame from CBH.buildCBH]
+        :species:       [str or list(str) or calcCBH.calcCBH]
                     SMILES string or list of SMILES strings that contains the target species 
                     for which to generate a thermochemical network.
         
@@ -43,6 +44,8 @@ class thermochemical_network:
         
         self.smiles2rung = {}
         self.smiles2sat = {}
+        self.smiles2rank = {}
+        self._uses_dataframe = False
         
         # check species argument
         if isinstance(species, str):
@@ -56,10 +59,11 @@ class thermochemical_network:
             except:
                 raise NameError(f'Arg "species" must contain valid SMILES strings. Check input.')
 
-        elif isinstance(species, pd.DataFrame):
-            if 'source' not in species.columns:
+        elif isinstance(species, calcCBH.calcCBH):
+            if 'source' not in species.energies.columns:
                 raise NameError('Arg "energies_df" DataFrame must have the method of ∆Hf computation in a column named "source".')
-            smiles2source = dict(zip(list(species.index), species.loc[:,'source'].values.tolist()))
+            self._uses_dataframe = True
+            smiles2source = dict(zip(list(species.energies.index), species.energies.loc[:,'source'].values.tolist()))
             self.species = list(smiles2source.keys())
 
             for s in self.species:
@@ -73,10 +77,12 @@ class thermochemical_network:
                         # ex. CBH-N-S
                         self.smiles2rung[s] = [float(smiles2source[s].split('//')[0].split('-')[1])]
                         self.smiles2sat[s] = [smiles2source[s].split('//')[0].split('-')[2]]
+                    self.smiles2rank[s] = species.rankings_rev[smiles2source[s].split('//')[1].split('+')[0]]
                 else:
                     # experimental
                     self.smiles2rung[s] = [None]
                     self.smiles2sat[s] = [None]
+                    self.smiles2rank[s] = species.rankings_rev[smiles2source[s]]
         else:
             raise TypeError(f'Arg "species" must be a valid SMILES string, a list containing valid SMILES strings, or a DataFrame computed from calcCBH. Instead {type(species)} was given.')
 
@@ -114,7 +120,7 @@ class thermochemical_network:
 
             self.all_smiles = list(set([smiles for sublist in all_smiles for smiles in sublist] + self.species))
 
-        elif isinstance(species, pd.DataFrame):
+        elif isinstance(species, calcCBH.calcCBH):
             self.highest_rungs = [1]*len(self.species) # doesn't matter since not used directly
             self.all_smiles = self.species
 
@@ -122,9 +128,11 @@ class thermochemical_network:
         self.smiles2index = {v:k for k, v in self.index2smiles.items()}
 
         self.graph = nx.DiGraph()
+        # Build graph
+        self._build()
 
 
-    def build(self):
+    def _build(self):
         """
         Build a graph representing the thermochemical network.
 
@@ -200,7 +208,10 @@ class thermochemical_network:
                         self.graph.add_node(precursor_index)
 
                     if not self.graph.has_edge(species_index, precursor_index):
-                        self.graph.add_edge(species_index, precursor_index, rung=highest_rung)
+                        if self._uses_dataframe:
+                            self.graph.add_edge(species_index, precursor_index, rung=highest_rung, rank=self.smiles2rank[s])
+                        else:
+                            self.graph.add_edge(species_index, precursor_index, rung=highest_rung)
 
                         self._build_recurs(s, highest_rung)
 
@@ -227,7 +238,8 @@ class thermochemical_network:
 
 
     def visualize(self, graph:nx.DiGraph=None, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
-                  figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
+                  figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12,
+                  edge_rank:bool=False):
         """
         Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
         Nodes are color-coded for the importance of a given molecule.
@@ -281,7 +293,8 @@ class thermochemical_network:
                   title=title,
                   save_fig_path=save_fig_path,
                   dpi=dpi,
-                  label_font_size=label_font_size)
+                  label_font_size=label_font_size, 
+                  edge_rank=edge_rank)
 
 
     def descendent_subgraph_of(self, smiles:str):
@@ -308,7 +321,8 @@ class thermochemical_network:
     
 
 def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
-                figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12):
+                figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12,
+                edge_rank:bool=False):
     """
     Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
     Nodes are color-coded for the importance of a given molecule.
@@ -386,7 +400,17 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
     node_cmap = plt.cm.Blues
     if title:
         plt.suptitle(title, fontsize=30)
-    nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=[graph[u][v]['rung'] for u,v in graph.edges], edge_cmap=edge_cmap)
+    
+    used_rank = False
+    if edge_rank:
+        try:
+            edge_color = [graph[u][v]['rank'] for u,v in graph.edges]
+            used_rank = True
+        except:
+            edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
+    else:
+        edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
+    nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=edge_color, edge_cmap=edge_cmap)
 
     node_colors = [v for v in nx.get_node_attributes(graph, 'num_ancestors').values()]
     
@@ -411,10 +435,20 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
     cbar.ax.tick_params(labelsize=20)
 
     # plot edge colorbar (rung)
-    edge_cmap_bounds = np.array(list(set(nx.get_edge_attributes(graph, 'rung').values())))
+    edge_attr = 'rung'
+    if used_rank:
+        edge_attr = 'rank'
+    edge_cmap_bounds = list(set(nx.get_edge_attributes(graph, edge_attr).values()))
+    if len(edge_cmap_bounds) == 1:
+        edge_cmap_bounds = [edge_cmap_bounds[-1]-1] + edge_cmap_bounds
+        edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
+    edge_cmap_bounds = np.array(edge_cmap_bounds)
     edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
     cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
-    cbar.set_label(label='CBH Rung', size=20)
+    if used_rank:
+        cbar.set_label(label='Level of Theory', size=20)
+    else:
+        cbar.set_label(label='CBH Rung', size=20)
     cbar.ax.tick_params(labelsize=20)
     plt.tight_layout()
     if save_fig_path and not dpi:

@@ -1244,11 +1244,9 @@ class calcCBH:
             # reaction dictionary
             rxn = add_dicts(cbh_pdts[rung], {k : -v for k, v in cbh_rcts[rung].items()}) 
 
-            # 3. If the ranks are homogeneous, decompose precursors until all are of better rank than the target
-            # if len(set(source_rank))==1 and max(source_rank) == rank and max(source_rank) != 1:
-            #     test_rung -= 1
-            #     continue
-            if len(set(source_rank))==1 and max(source_rank) >= rank and max(source_rank) != 1:
+            # 3. Decompose precursors until all are a better rank than the target
+            # delete "len(set(source_rank))==1 and " ?????
+            if max(source_rank) >= rank and max(source_rank) != 1:
                 verbose_error = False
                 while max(source_rank) >= rank:                    
                     if max(source_rank) > rank:
@@ -1281,6 +1279,8 @@ class calcCBH:
                             pass
                     
                     for precur in decompose_precurs:
+                        if precur not in rxn.keys():
+                            continue
                         # choose saturation / rung to check
                         if len(d_sat[precur]) == 1:
                             p_sat = d_sat[precur][0]
@@ -1307,7 +1307,10 @@ class calcCBH:
                                 del rxn[precur]
                             except KeyError:
                                 # new precursor does not exist in database
+                                dont_exist = [pp for pp in p.cbh_pdts[p_rung].keys() if pp in self.energies.index.values]
+                                dont_exist += [pp for pp in p.cbh_rcts[p_rung].keys() if pp in self.energies.index.values]
                                 self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
+                                self.error_messages[s][-1] += f"\n\t\tThese reactants were: {dont_exist}"
                                 self.error_messages[s][-1] += f"\n\tThere is a possibility that CBH-{test_rung}-{label} of {s} \n\tis equivalent to a lower rung, but this cannot be rigorously tested automatically."
                                 verbose_error = True
                                 break
@@ -1662,8 +1665,14 @@ class calcCBH:
         all_rcts = {} # {species: {CBH scheme reactants}}
         all_pdts = {} # {species: {CBH scheme products}}
         highest_rung_per_molec = []
+        rm_species = []
         for species in species_list:
-            cbh = CBH.buildCBH(species, saturate, allow_overshoot=allow_overshoot, surface_smiles=surface_smiles) # generate CBH scheme
+            try:
+                cbh = CBH.buildCBH(species, saturate, allow_overshoot=allow_overshoot, surface_smiles=surface_smiles) # generate CBH scheme
+            except:
+                print(f'Cannot compute CBH for "{species}". Continuing without it.')
+                rm_species.append(species)
+                continue
             # add to dictionary / lists
             all_rcts[species] = cbh.cbh_rcts
             all_pdts[species] = cbh.cbh_pdts
@@ -1672,6 +1681,7 @@ class calcCBH:
         # Find the highest CBH rung of all the CBH schemes
         highest_rung = max(highest_rung_per_molec)
 
+        species_list = [s for s in species_list if s not in rm_species]
         dfs = [] # initialize DataFrame list
         # Cycle through each CBH rung
         for rung in range(highest_rung+1):
