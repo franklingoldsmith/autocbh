@@ -4,6 +4,7 @@ autoCBH/data/molecule_data/
 .vscode/
 *.svg
 *.png
+*.ai
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
