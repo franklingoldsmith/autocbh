@@ -1,0 +1,46 @@
+alias:
+- ch3cf2ch3
+alternative_rxn:
+  1.5:
+    C: -1
+    CCC: 1
+    FCF: 1
+  2:
+    C: -1
+    C(F)(F): 1
+    CCC: 1
+heat_of_formation:
+  CBH-1-avg(H+F)//anl0: -531.6514863088355
+heat_of_reaction:
+  CBH-1-avg(H+F)//anl0: -170.91035887572926
+smiles: CC(C)(F)F
+theory:
+  anl0:
+    av5z: -317.33285862
+    avqz: -317.30080123
+    ccQ: -316.86989652
+    ccT: -316.86747729
+    ci_DK: -317.22933617
+    ci_NREL: -317.02425867
+    core_0_qz: -317.59379797
+    core_0_tz: -317.47539762
+    core_X_qz: -317.30627982
+    core_X_tz: -317.21369513
+    zpe: 0.08804701
+    zpe_anharm: 226.26
+    zpe_harm: 229.07
+  b2plypd3:
+    b2plypd3_E0: -317.452531
+  f12b:
+    b2plypd3_zpe: 0.088241
+    f12b: -317.33728434
+  m062x:
+    m062x_E0: -317.545249
+  m062x_dlpno:
+    m062x_dlpno: -317.3077783477
+    m062x_zpe: 0.088549
+  wb97xd:
+    wb97xd_E0: -317.57579
+  wb97xd_dlpno:
+    wb97xd_dlpno: -317.3077980271
+    wb97xd_zpe: 0.088237

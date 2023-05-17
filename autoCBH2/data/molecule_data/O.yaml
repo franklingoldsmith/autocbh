@@ -1,0 +1,37 @@
+alias:
+- h2o
+heat_of_formation:
+  ATcT: -238.898
+heat_of_reaction:
+  ATcT: 0.0
+smiles: O
+theory:
+  anl0:
+    av5z: -76.36934945
+    avqz: -76.36148598
+    ccQ: -76.24181711
+    ccT: -76.24116728
+    ci_DK: -76.37421529
+    ci_NREL: -76.32521367
+    core_0_qz: -76.42095041
+    core_0_tz: -76.38979509
+    core_X_qz: -76.3612964
+    core_X_tz: -76.33569109
+    zpe: 0.02153723
+    zpe_anharm: 55.001
+    zpe_harm: 55.874
+  b2plypd3:
+    b2plypd3_E0: -76.385727
+  f12b:
+    b2plypd3_zpe: 0.021458
+    f12b: -76.36983767
+  m062x:
+    m062x_E0: -76.385727
+  m062x_dlpno:
+    m062x_dlpno: -76.3635009624
+    m062x_zpe: 0.021458
+  wb97xd:
+    wb97xd_E0: -76.385727
+  wb97xd_dlpno:
+    wb97xd_dlpno: -76.3635009624
+    wb97xd_zpe: 0.021458

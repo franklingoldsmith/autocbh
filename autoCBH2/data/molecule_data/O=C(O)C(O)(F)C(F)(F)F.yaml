@@ -1,0 +1,24 @@
+alias:
+- cf3cf_oh_c_o_oh
+heat_of_formation:
+  CBH-3-H//f12b: -1421.7041529436262
+heat_of_reaction:
+  CBH-3-H//f12b: 25.86256403278944
+smiles: O=C(O)C(O)(F)C(F)(F)F
+theory:
+  anl0: {}
+  b2plypd3:
+    b2plypd3_E0: -740.375276
+  f12b:
+    b2plypd3_zpe: 0.064349
+    f12b: -739.99260935
+  m062x:
+    m062x_E0: -740.572018
+  m062x_dlpno:
+    m062x_dlpno: -739.91895868
+    m062x_zpe: 0.065636
+  wb97xd:
+    wb97xd_E0: -740.587582
+  wb97xd_dlpno:
+    wb97xd_dlpno: -739.918935494
+    wb97xd_zpe: 0.065102

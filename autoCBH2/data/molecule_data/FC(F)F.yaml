@@ -1,0 +1,37 @@
+alias:
+- chf3
+heat_of_formation:
+  ATcT: -689.34
+heat_of_reaction:
+  ATcT: 0.0
+smiles: FC(F)F
+theory:
+  anl0:
+    av5z: -337.99733949
+    avqz: -337.96134938
+    ccQ: -337.50804908
+    ccT: -337.5061315
+    ci_DK: -338.00839196
+    ci_NREL: -337.74997494
+    core_0_qz: -338.20873724
+    core_0_tz: -338.0872546
+    core_X_qz: -337.96821938
+    core_X_tz: -337.86922026
+    zpe: 0.02577849
+    zpe_anharm: 64.966
+    zpe_harm: 65.52
+  b2plypd3:
+    b2plypd3_E0: -338.161175
+  f12b:
+    b2plypd3_zpe: 0.025506
+    f12b: -338.00334871
+  m062x:
+    m062x_E0: -338.240653
+  m062x_dlpno:
+    m062x_dlpno: -337.9691404699
+    m062x_zpe: 0.025922
+  wb97xd:
+    wb97xd_E0: -338.253321
+  wb97xd_dlpno:
+    wb97xd_dlpno: -337.9691417109
+    wb97xd_zpe: 0.025523

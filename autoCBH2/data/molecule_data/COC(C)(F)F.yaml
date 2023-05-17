@@ -1,0 +1,35 @@
+alias:
+- ch3cf2och3
+heat_of_formation:
+  CBH-2-avg(H+F)//anl0: -680.7421772515183
+heat_of_reaction:
+  CBH-2-avg(H+F)//anl0: 0.0
+smiles: COC(C)(F)F
+theory:
+  anl0:
+    av5z: -392.48747945
+    avqz: -392.44757295
+    ci_DK: -392.33490872
+    ci_NREL: -392.08091871
+    core_0_qz: -392.80117146
+    core_0_tz: -392.65578104
+    core_X_qz: -392.45441166
+    core_X_tz: -392.34027007
+    zpe: 0.09313623
+    zpe_anharm: 238.79
+    zpe_harm: 241.72
+  b2plypd3:
+    b2plypd3_E0: -392.649274
+  f12b:
+    b2plypd3_zpe: 0.093192
+    f12b: -392.49303497
+  m062x:
+    m062x_E0: -392.764876
+  m062x_dlpno:
+    m062x_dlpno: -392.455989061
+    m062x_zpe: 0.093811
+  wb97xd:
+    wb97xd_E0: -392.792103
+  wb97xd_dlpno:
+    wb97xd_dlpno: -392.4559348435
+    wb97xd_zpe: 0.093293

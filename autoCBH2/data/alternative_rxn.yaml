@@ -1,0 +1,61 @@
+CC(C)(F)F:
+  1.5:
+    C: -1
+    CCC: 1
+    FCF: 1
+CC(F)(F)F:
+  2:
+    CC: 0.5
+    FC(F)(F)C(F)(F)F: 0.5
+CC(F)(F)C(F)(F)F:
+  1.5:
+    CC: -0.5
+    C: -1
+    CCC: 1
+    FCF: 1
+    FC(F)(F)C(F)(F)F: 0.5
+CC(F)(F)C(C)(F)F:
+  1.5:
+    CC: -1
+    C: -2
+    CCC: 2
+    FCF: 2
+FC(F)(F)C(F)(F)C(F)(F)F:
+  1.5:
+    C: -1
+    CC: -1
+    CCC: 1
+    FCF: 1
+    FC(F)(F)C(F)(F)F: 1
+OC(F)(F)F:
+  1:
+    CF: -1
+    FC(F)(F)F: 1
+    CO: 1
+CC(O)(F)F:
+  1.5:
+    CC: -2
+    CCO: 1
+    CC(C)(F)F: 1
+    C: 1
+CC(C)(O)F:
+  1.5:
+    FCF: -1
+    CC(C)O: 1
+    FC(F)F: 1
+COC(F)(F)F:
+  1.5:
+    CF: -1
+    FC(F)(F)F: 1
+    COC: 1
+CC(F)(F)C(=O)O:
+  1.5:
+    C: -1
+    FCF: 1
+    CCC(=O)O: 1
+CC(F)(F)C(F)(F)C(C)(F)F:
+  2.5:
+    FC(F)(F)C(F)(F)C(F)(F)F: -3
+    CC(C)(F)F: -4
+    CC(F)(F)C(F)(F)F: 6
+    CC(F)(F)C(C)(F)F: 2

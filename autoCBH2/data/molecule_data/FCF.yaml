@@ -1,0 +1,14 @@
+alias:
+- cf2h2
+heat_of_formation:
+  ATcT: -443.38
+heat_of_reaction:
+  ATcT: 0.0
+smiles: 'FCF'
+theory:
+  m062x_dlpno:
+    m062x_dlpno: -238.7833025
+    m062x_zpe: 0.033282
+  wb97xd_dlpno:
+    wb97xd_dlpno: -238.783302
+    wb97xd_zpe: 0.032936

@@ -1,0 +1,37 @@
+alias:
+- ch3oh
+heat_of_formation:
+  ATcT: -190.04
+heat_of_reaction:
+  ATcT: 0.0
+smiles: CO
+theory:
+  anl0:
+    av5z: -115.60141475
+    avqz: -115.59007098
+    ccQ: -115.42136413
+    ccT: -115.42020681
+    ci_DK: -115.51196871
+    ci_NREL: -115.5750104
+    core_0_qz: -115.70483793
+    core_0_tz: -115.65909821
+    core_X_qz: -115.59095093
+    core_X_tz: -115.55535706
+    zpe: 0.0515349
+    zpe_anharm: 131.97
+    zpe_harm: 133.98
+  b2plypd3:
+    b2plypd3_E0: -115.626508
+  f12b:
+    b2plypd3_zpe: 0.051582
+    f12b: -115.60218192
+  m062x:
+    m062x_E0: -115.662348
+  m062x_dlpno:
+    m062x_dlpno: -115.5927204124
+    m062x_zpe: 0.051772
+  wb97xd:
+    wb97xd_E0: -115.679713
+  wb97xd_dlpno:
+    wb97xd_dlpno: -115.5926895789
+    wb97xd_zpe: 0.051694

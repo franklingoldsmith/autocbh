@@ -1,0 +1,80 @@
+c2f6: FC(F)(F)C(F)(F)F
+c2h6: CC
+c3f8: FC(F)(F)C(F)(F)C(F)(F)F
+c4f10: FC(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c4f9ch3: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c5f12: FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+cf2h2: FCF
+cf2o: O=C(F)F
+cf3cooh: O=C(O)C(F)(F)F
+cf3cf2cooh: O=C(O)C(F)(F)C(F)(F)F
+cf3cf2cf2oh: OC(F)(F)C(F)(F)C(F)(F)F
+cf3cf2ocf3: FC(F)(F)OC(F)(F)C(F)(F)F
+cf3cf2och3: COC(F)(F)C(F)(F)F
+cf3cf2oh: OC(F)(F)C(F)(F)F
+cf3cf_oh_cooh: O=C(O)C(O)(F)C(F)(F)F
+cf3cf_oh_cf3: OC(F)(C(F)(F)F)C(F)(F)F
+cf3ocf3: FC(F)(F)OC(F)(F)F
+cf3ocf_cf3_cf3: FC(F)(F)OC(F)(C(F)(F)F)C(F)(F)F
+cf3ocf_ch3_ch3: CC(C)(F)OC(F)(F)F
+cf3oh: OC(F)(F)F
+cf4: FC(F)(F)F
+ch3_c3f6_ch3: CC(F)(F)C(F)(F)C(C)(F)F
+ch3cooh: CC(=O)O
+ch3cf2cooh: CC(F)(F)C(=O)O
+ch3cf2cf2cf3: CC(F)(F)C(F)(F)C(F)(F)F
+ch3cf2cf2ch3: CC(F)(F)C(C)(F)F
+ch3cf2cf2oh: CC(F)(F)C(O)(F)F
+ch3cf2cf3: CC(F)(F)C(F)(F)F
+ch3cf2ch3: CC(C)(F)F
+ch3cf2ocf3: CC(F)(F)OC(F)(F)F
+ch3cf2och3: COC(C)(F)F
+ch3cf2oh: CC(O)(F)F
+ch3cf3: CC(F)(F)F
+ch3cf_oh_cooh: CC(O)(F)C(=O)O
+ch3cf_oh_cf3: CC(O)(F)C(F)(F)F
+ch3cf_oh_ch3: CC(C)(O)F
+ch3ch2ch3: CCC
+ch3f: CF
+ch3ocf3: COC(F)(F)F
+ch3ocf_cf3_cf3: COC(F)(C(F)(F)F)C(F)(F)F
+ch3ocf_ch3_ch3: COC(C)(C)F
+ch3och3: COC
+ch3oh: CO
+ch4: C
+chf3: FC(F)F
+h2: '[H][H]'
+h2o: O
+hf: F
+
+# manual
+PFOA: O=C(O)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c7f15ch3: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c6f13ch3: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c5f11ch3: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+
+ch3c6f12cooh: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(=O)O
+ch3c5f10cooh: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(=O)O
+ch3c4f8cooh: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(=O)O
+ch3c3f6cooh: CC(F)(F)C(F)(F)C(F)(F)C(=O)O
+ch3cf2cf2cooh: CC(F)(F)C(F)(F)C(=O)O
+
+ch3c6f12ch3: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(C)(F)F
+ch3c5f10ch3: CC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(C)(F)F
+ch3c4f8ch3: CC(F)(F)C(F)(F)C(F)(F)C(C)(F)F
+
+ch2o: C=O
+
+c6f14: FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c7f16: FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c8f18: FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+
+c3f7cooh: O=C(O)C(F)(F)C(F)(F)C(F)(F)F
+c4f9cooh: O=C(O)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c5f11cooh: O=C(O)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+c6f13cooh: O=C(O)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F
+
+GenX: O=C(O)C(F)(OC(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F
+ch3ocf2cf2ch3: COC(F)(F)C(C)(F)F
+ch3ocf_cf3_cooh: COC(F)(C(=O)O)C(F)(F)F
+ch3cf2och3_ch3_cf: CC(C)(F)OC(C)(F)F

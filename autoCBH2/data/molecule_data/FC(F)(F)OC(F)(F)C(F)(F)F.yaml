@@ -1,0 +1,21 @@
+alias:
+- cf3cf2ocf3
+heat_of_formation:
+  CBH-4-H//m062x_dlpno+wb97xd_dlpno: -1941.35227184835
+heat_of_reaction:
+  CBH-4-H//m062x_dlpno+wb97xd_dlpno: 12.27027076981675
+smiles: FC(F)(F)OC(F)(F)C(F)(F)F
+theory:
+  anl0: {}
+  b2plypd3: {}
+  f12b: {}
+  m062x:
+    m062x_E0: -988.343155
+  m062x_dlpno:
+    m062x_dlpno: -987.4883090114
+    m062x_zpe: 0.048016
+  wb97xd:
+    wb97xd_E0: -988.357514
+  wb97xd_dlpno:
+    wb97xd_dlpno: -987.4881898948
+    wb97xd_zpe: 0.04699
