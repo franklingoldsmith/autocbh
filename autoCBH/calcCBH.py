@@ -10,6 +10,8 @@ import os
 import yaml
 from itertools import compress
 from copy import copy
+import sys
+sys.path.append('.')
 
 
 class calcCBH:
@@ -41,27 +43,51 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, methods: list=[], force_generate_database:str=None, force_generate_alternative_rxn:bool=False, 
-                        dataframe_path:str=None, alternative_rxn_path:str=None):
+    def __init__(self, methods: list=[], 
+                 dataframe_path:str=None, method_keys_path:str='data/methods_keys.yaml', 
+                 rankings_path:str='data/rankings.yaml', alternative_rxn_path:str=None, 
+                 force_generate_database:str=None, force_generate_alternative_rxn:str=None, 
+                 zero_out_heats:bool=False):
         """
         ARGUMENTS
         ---------
-        :methods:       [list] List of method names to use for calculation
-                            of HoF. If empty, use all available methods.
-                            (default=[])
+        :methods:                           [list] (default=[])
+                List of method names to use for calculation of HoF. If empty, 
+                use all available methods.
+                            
+        :dataframe_path:                    [str] (default=None)
+                Path to a PICKLE file of a dataframe to be used for self.energies.
+                The index contains RDKit canonized SMILES (rdkit.Chem.CanonSmiles)
+                for each species. The columns contain each QM energy corresponding to
+                a method. Finally the columns "DfH", "DrxnH", and "source" must be included.
+                "DfH" is the heat of formation, "DrxnH" is the heat of reaction, "source"
+                is where DfH was derived. Species with unknown "DfH" should ensure that
+                "DfH" and "DrxnH" are 0 and "source" is np.nan. This final step can be done
+                with the zero_out_heats argument.
+
+        :method_keys_path:                  [str] (default='data/methods_keys.yaml')
+                Path to a YAML file that maps the column names of the self.energies 
+                dataframe to a method (ex. method_1: [method_1_E, method_1_zpe])
+        
+        :rankings_path:                     [str] (default='data/rankings.yaml')
+                Path to a YAML file that maps each method to a ranking.
+
+        :alternative_rxn_path:              [str] (default=None)
+                Path to a YAML file that contains the different alternative reactions
+                for a given species.
 
         :force_generate_database:           [str] (default=None)
-                        Force the generation of the self.energies dataframe
-                        from the folder containing individual species data
-                        in yaml files. Typically held at: 'data/molecule_data'
+                Path to a folder containing individual species data in YAML files
+                to generate the self.energies dataframe.
+                Typically held at: 'data/molecule_data'
 
-        :force_generate_alternative_rxn:    [bool] (default=False) 
-                        Force the generation of an alternative reaction
-                        YAML file. Otherwise, use the existing one.
-        
-        :dataframe_path:                    [str] (default=None)
-                        Load the self.energies dataframe from the pickle file
-                        containing a previously saved self.energies dataframe.
+        :force_generate_alternative_rxn:    [str] (default=None) 
+                Path to a folder containing individual species data in YAML files to
+                generate and use an alternative_rxn.yaml file.
+                
+        :zero_out_heats:                    [bool] (default=False)
+                Will automatically set all heats of reaciton to 0 and all heats of
+                formation for sources that are not rank 1 (experimental) to 0.
         """
 
         # Generate Database
@@ -74,7 +100,7 @@ class calcCBH:
                 constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
                 # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
                 # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
-                self.energies = pd.read_pickle('./data/energies_Franklin_nan.pkl')
+                self.energies = pd.read_pickle('./data/pfas_energies.pkl')
                 # self.energies = generate_database('data/molecule_data/')[0] # something is different
 
                 self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
@@ -89,17 +115,15 @@ class calcCBH:
                 # 'm062x_E0','m062x_dlpno','wb97xd_zpe','wb97xd_E0','wb97xd_dlpno']] = nan
 
         # Load the methods to use
-        with open('data/methods_keys.yaml', 'r') as f:
+        with open(method_keys_path, 'r') as f:
             self.methods_keys_dict = yaml.safe_load(f)
 
-        # TODO: Check whether database related files (database, method_keys, alternative_CBH) exist or force download
-
+        # choose which methods to use
         if len(methods)==0:
             # use all available methods in methods_keys dictionary
-            # self.methods = list(self.methods_keys_dict.keys())
             self.methods = []
             self.methods_keys = []
-            methods_to_remove = []
+            methods_to_remove = [] # methods in the method_keys_path that don't exist in the provided energies dataframe
             for m in self.methods_keys_dict:
                 if all([_m in self.energies.columns for _m in self.methods_keys_dict[m]]):
                     self.methods_keys.extend(self.methods_keys_dict[m])
@@ -107,7 +131,7 @@ class calcCBH:
                 else:
                     methods_to_remove.append(m)
             if len(self.methods_keys) == 0:
-                raise KeyError('None of the method keys found in "data/methods_keys.yaml" were found in the provided DataFrame columns. \nPlease ensure that correct keys are in either the YAML file or the DataFrame.')
+                raise KeyError(f'None of the method keys found in "{method_keys_path}" were found in the provided DataFrame columns. \nPlease ensure that correct keys are in either the YAML file or the DataFrame.')
             for m in methods_to_remove:
                 del self.methods_keys_dict[m]
         else:
@@ -125,7 +149,8 @@ class calcCBH:
             self.energies = self.energies[self.methods_keys+['source', 'DfH', 'DrxnH']]
         
         # Load rankings
-        self.rankings = load_rankings('data/rankings.yaml')
+        # maps rank to methods
+        self.rankings = load_rankings(rankings_path)
         # remove items from rankings list that aren't needed based on user selected methods
         del_methods = {} # stores methods to delete from self.rankings
         for rank in self.rankings.keys():
@@ -143,20 +168,28 @@ class calcCBH:
             else:
                 self.rankings[rank].remove(*method_list)
         
+        # maps each method to rank
         self.rankings_rev = {}
         for k,l in self.rankings.items():
             for v in l:
                 self.rankings_rev[v] = k
 
-        if not os.path.isfile('data/alternative_rxn.yaml') or force_generate_alternative_rxn and not alternative_rxn_path:
-            generate_alternative_rxn_file('data/molecule_data', 'alternative_rxn')
+        if force_generate_alternative_rxn is not None and os.path.isdir(force_generate_alternative_rxn) and alternative_rxn_path is None:
+            generate_alternative_rxn_file(force_generate_alternative_rxn, 'alternative_rxn')
+            alternative_rxn_path = os.path.join(force_generate_alternative_rxn, 'alternative_rxn.yaml')
 
-        if not alternative_rxn_path:
-            alternative_rxn_path = 'data/alternative_rxn.yaml'
+        self.alternative_rxn = {}
+        if alternative_rxn_path is not None:
+            with open(alternative_rxn_path, 'r') as f:
+                self.alternative_rxn = yaml.safe_load(f)
 
-        with open(alternative_rxn_path, 'r') as f:
-            self.alternative_rxn = yaml.safe_load(f)
-        
+        if zero_out_heats:
+            # zero out heats of formation for species without experimental heats of formation
+            # zero out heats of reaction for all species
+            non_exp_species = [s for s in self.energies.index.values if self.rankings_rev[self.energies.loc[s, 'source']] != 1]
+            self.energies.loc[non_exp_species, ['DfH']] = 0.0
+            self.energies.loc[:, ['DrxnH']] = 0.0
+
         self.error_messages = {}
 
 

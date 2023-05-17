@@ -9,7 +9,6 @@ import sys
 sys.path.append('.')
 import os
 import yaml
-import pandas as pd
 import calcCBH
 
 class thermochemical_network:
@@ -213,6 +212,8 @@ class thermochemical_network:
                         else:
                             self.graph.add_edge(species_index, precursor_index, rung=highest_rung)
 
+                        if self._uses_dataframe and self.smiles2rank[s] == 1: # experimental
+                            continue
                         self._build_recurs(s, highest_rung)
 
 
@@ -297,7 +298,7 @@ class thermochemical_network:
                   edge_rank=edge_rank)
 
 
-    def descendent_subgraph_of(self, smiles:str):
+    def descendent_subgraph_of(self, smiles:str or list):
         """
         Returns the subgraph that only includes descendents of the 
         specified species (including itself). 
@@ -314,9 +315,15 @@ class thermochemical_network:
             Subgraph containing the specified node and its descendents.
         """
 
-        descendants = nx.descendants(self.graph, smiles)
-        descendants.add(smiles)
-        subgraph = self.graph.subgraph(descendants).copy()
+        if isinstance(smiles, str):
+            smiles = [smiles]
+        subgraphs = []
+        for s in smiles:
+            descendants = nx.descendants(self.graph, s)
+            descendants.add(s)
+            subgraph = self.graph.subgraph(descendants).copy()
+            subgraphs.append(subgraph)
+        subgraph = nx.compose_all(subgraphs)
         return subgraph
     
 
@@ -396,7 +403,7 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
     # ax = plt.figure(figsize=figsize)
     fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
     pos = graphviz_layout(graph, prog='dot')
-    edge_cmap = plt.cm.Dark2
+    edge_cmap = plt.cm.tab10
     node_cmap = plt.cm.Blues
     if title:
         plt.suptitle(title, fontsize=30)
@@ -410,7 +417,8 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
             edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
     else:
         edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
-    nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=edge_color, edge_cmap=edge_cmap)
+    
+    nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=edge_color, edge_cmap=edge_cmap, edge_vmin=min(edge_color),edge_vmax=max(edge_color))
 
     node_colors = [v for v in nx.get_node_attributes(graph, 'num_ancestors').values()]
     
@@ -435,12 +443,11 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
     cbar.ax.tick_params(labelsize=20)
 
     # plot edge colorbar (rung)
-    edge_attr = 'rung'
-    if used_rank:
-        edge_attr = 'rank'
-    edge_cmap_bounds = list(set(nx.get_edge_attributes(graph, edge_attr).values()))
+    edge_cmap_bounds = list(set(edge_color))
     if len(edge_cmap_bounds) == 1:
         edge_cmap_bounds = [edge_cmap_bounds[-1]-1] + edge_cmap_bounds
+        edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
+    else:
         edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
     edge_cmap_bounds = np.array(edge_cmap_bounds)
     edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
