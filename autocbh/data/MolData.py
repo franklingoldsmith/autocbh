@@ -129,7 +129,7 @@ def read_data(file: str, check_alternative_rxn=True):
     return molecule
 
 
-def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'):
+def generate_database(folder_path:str, ranking_path:str):
     """
     Read each molecule's data file and load into a pandas dataframe.
     Also create another dataframe or dictionary that contains each 
@@ -138,6 +138,8 @@ def generate_database(folder_path: str, ranking_path: str = 'data/rankings.yaml'
     ARGUMENTS
     ---------
     :folder_path:     [str] path to folder holding molecular data
+
+    :ranking_path:    [str] path to ranking YAML file
 
     RETURNS
     -------
@@ -223,7 +225,6 @@ def generate_alternative_rxn_file(folder_path:str, save_file:str=None):
             .
             .
             .
-
     """
 
     alternative_rxn = {}    # {target smiles : {CBH_rung : {precursor smiles : coeff}}}
@@ -279,17 +280,15 @@ def add_alternative_rxns_to_database(alternative_rxn_file:str, database_folder:s
             raise FileNotFoundError(f'File for molecule {alt} not found in database folder. File name must be RDKit canonical SMILES of molecule.')
             
 
-def load_rankings(file=''):
+def load_rankings(file):
     """
     Load Ranking file for different levels of theory.
     Reverse the file such that it returns a dictionary of form
     {rank : list(methods)}
     
-    Default is in 'data/rankings.yml'
-
     ARGUMENTS
     ---------
-    :file:      [str] file path to yaml file holding rankings
+    :file:      [str] file path to YAML file holding rankings
 
     RETURNS
     -------
@@ -343,7 +342,7 @@ def generate_alias_file(folder_path:str, save_folder:str=None):
     return aliases
 
 
-def search_alias(name: str, alias_filepath='data/alias.yaml'):
+def search_alias(name: str, alias_filepath:str):
     """
     Searches through a file containing alternative names for
     molecules. Returns the Canon SMILES of a given alias.
