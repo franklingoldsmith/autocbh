@@ -29,6 +29,13 @@ class uncertainty_quantification:
         List of method names to use for calculation of HoF. If empty, use 
         all available methods.
 
+    :method_keys_path:  [str] (default='data/methods_keys.yaml')
+                Path to a YAML file that maps the column names of the self.energies 
+                dataframe to a method (ex. method_1: [method_1_E, method_1_zpe])
+        
+    :rankings_path:     [str] (default='data/rankings.yaml')
+            Path to a YAML file that maps each method to a ranking.
+
     :force_generate_database:   [bool] (default=False)
         Force the generation of the self.energies dataframe from the folder 
         containing individual species data in yaml files.
@@ -40,6 +47,10 @@ class uncertainty_quantification:
     :dataframe_path:    [str] (default=None)
         Load the self.energies dataframe from the pickle file containing a 
         previously saved self.energies dataframe.
+    
+    :zero_out_heats:                    [bool] (default=False)
+                Will automatically set all heats of reaciton to 0 and all heats of
+                formation for sources that are not rank 1 (experimental) to 0.
     
     :saturate:  [list(int) or list(str)] (default=[1,9] for hydrogen and fluorine)
         List of integers representing the atomic numbers of the elements to 
@@ -109,23 +120,35 @@ class uncertainty_quantification:
     :simulation_results:    [np.array] shape=(num_species, num_simulations+1)
         2D array containing results of all simulations for all species.
         First column corresponds to the mean configuration.
+
+    :cbh_selection_combos:  [list] 
+        Holds different CBH selection rule/priority combinations
+    
+    :cbh_sat_combos:        [list]
+        Holds different saturation combinations
     """
     def __init__(self, num_simulations=1000, calcCBH_obj:calcCBH=None, 
                     methods: list=[], 
                     dataframe_path:str=None, 
+                    method_keys_path:str='data/methods_keys.yaml', 
+                    rankings_path:str='data/rankings.yaml',
                     alternative_rxn_path:str=None, 
                     saturate:list=[1,9], 
                     priority:str="abs_coeff", 
                     max_rung:int=None, 
                     alt_rxn_option:str=None, 
                     force_generate_database:bool=False, 
-                    force_generate_alternative_rxn:bool=False):
+                    force_generate_alternative_rxn:bool=False,
+                    zero_out_heats:bool=False):
         
         self.methods = methods
         self.dataframe_path = dataframe_path
+        self.method_keys_path = method_keys_path
+        self.rankings_path = rankings_path
         self.alternative_rxn_path = alternative_rxn_path
         self.force_generate_database = force_generate_database
         self.force_generate_alternative_rxn = force_generate_alternative_rxn
+        self.zero_out_heats = zero_out_heats
 
         self.num_simulations = num_simulations
         self.saturate = saturate
@@ -136,9 +159,14 @@ class uncertainty_quantification:
         if calcCBH_obj:
             self.calcCBH = calcCBH_obj
         else:
-            self.calcCBH = calcCBH(methods=methods, force_generate_database=force_generate_database, 
-                        force_generate_alternative_rxn=force_generate_alternative_rxn, 
-                        dataframe_path=dataframe_path, alternative_rxn_path=alternative_rxn_path)
+            self.calcCBH = calcCBH(methods=self.methods, 
+                                    dataframe_path=self.dataframe_path, 
+                                    method_keys_path=self.method_keys_path, 
+                                    rankings_path=self.rankings_path, 
+                                    alternative_rxn_path=self.alternative_rxn_path, 
+                                    force_generate_database=self.force_generate_database, 
+                                    force_generate_alternative_rxn=self.force_generate_alternative_rxn, 
+                                    zero_out_heats=self.zero_out_heats)
         
         self.species = copy(self.calcCBH.energies.index.values)
 
@@ -153,6 +181,8 @@ class uncertainty_quantification:
         self.init_simulation_matrix = np.random.normal(loc=means_matrix, scale=sigma_matrix).T
 
         self.simulation_results = 0
+        self.cbh_selection_combos = None
+        self.cbh_sat_combos = None
     
     
     def run(self):
@@ -306,6 +336,7 @@ class uncertainty_quantification:
                 self.simulation_results[c, i_s, 1:] = weighted_Hf
             self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
 
+        self.cbh_selection_combos = combos
         return combos
 
 
@@ -355,6 +386,7 @@ class uncertainty_quantification:
             
             self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
 
+        self.cbh_sat_combos = sats
         return sats
     
 
