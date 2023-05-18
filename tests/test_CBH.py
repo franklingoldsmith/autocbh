@@ -264,7 +264,7 @@ class TestReplaceImplicitH:
         # only three carbon atoms where each have two implicit valences
         impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in mol.GetAtoms() \
                     if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() == 6}
-        new_mol = CBH.buildCBH.replace_implicit_Hs(mol, impl_valence, 17)
+        new_mol = CBH.buildCBH._replace_implicit_Hs(mol, impl_valence, 17)
         smiles = Chem.MolToSmiles(new_mol)
         assert smiles.count('Cl') == 7
     
@@ -278,7 +278,7 @@ class TestReplaceImplicitH:
         impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in mol.GetAtoms() \
                     if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() == 6}
         del impl_valence[list(impl_valence.keys())[1]]
-        new_mol = CBH.buildCBH.replace_implicit_Hs(mol, impl_valence, 17)
+        new_mol = CBH.buildCBH._replace_implicit_Hs(mol, impl_valence, 17)
         carbon_atom_inds = list(impl_valence.keys())
         new_Cl_atoms = [nbr.GetAtomicNum() for atom in carbon_atom_inds for nbr in new_mol.GetAtomWithIdx(atom).GetNeighbors() if nbr.GetAtomicNum() == 17]
         assert new_Cl_atoms.count(17) == 4

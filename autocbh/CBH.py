@@ -23,13 +23,7 @@ class buildCBH:
     :graph_adj:     [np.array] adjacency matrix of target molecule graph
     :graph_dist:    [np.array] distance matrix between all pairs of nodes
     
-    Same as above but with explicit hydrogens
-    :mol_h:         [RDKit Mol obj] molecule 
-    :smiles_h:      [str] RDKit's SMILES respresentation of the target molecule
-    :graph_h:       [IGraph graph obj] IGraph's graph representation of the target 
-                                        molecule
-    :graph_adj_h:   [np.array] adjacency matrix of target molecule graph
-    :graph_dist_h:  [np.array] distance matrix between all pairs of nodes
+    Above attributes found for explicit hydrogens with self._*_h
 
     :cbh_rcts:      [nested dict] The reactant side of each CBH level 
                                 {cbh_level: {residual SMILES : num occurences}}
@@ -43,13 +37,6 @@ class buildCBH:
     -------
     build_scheme    The workhorse of the class. Builds the CBH hierarchy of a given 
                     molecule
-    atom_centric    [helper] computes the atom-centric CBH rungs
-    bond_centric    [helper] computes the bond-centric CBH rungs
-    CBH_0_F         [helper] constructs the fluorinated CBH-0 rung, but avoids the 
-                    use of F2 which leads to a smaller number of precursor molecules
-    count_repeats   [-static] Count the number of repeats in a list and returns a 
-                    dictionary
-    replace_implicit_Hs   [-static] Replace specified atoms with a desired atom
     visualize       Used to visualize CBH reactions in Jupyter Notebook. 
     """
 
@@ -131,11 +118,11 @@ class buildCBH:
         self.graph_dist = np.array(self.graph.shortest_paths()) # Matrix holding distances between vertices
 
         # Molecule attributes with explicit hydrogens
-        self.mol_h = Chem.AddHs(self.mol)
-        self.smiles_h = Chem.MolToSmiles(Chem.AddHs(self.mol_h))
-        self.graph_h = mol2graph(self.mol_h)
-        self.graph_adj_h = np.array(self.graph_h.get_adjacency().data)
-        self.graph_dist_h = np.array(self.graph_h.shortest_paths())
+        self._mol_h = Chem.AddHs(self.mol)
+        self._smiles_h = Chem.MolToSmiles(Chem.AddHs(self._mol_h))
+        self._graph_h = mol2graph(self._mol_h)
+        self._graph_adj_h_len = len(np.array(self._graph_h.get_adjacency().data))
+        self._graph_dist_h = np.array(self._graph_h.shortest_paths())
 
         # Build CBH Scheme
         self.ignore_F2 = ignore_F2
@@ -243,13 +230,13 @@ class buildCBH:
         atom_symbols.remove('H')
         atom_symbols.remove('O')
         atom_symbols.remove('F')
-        CBH_0_F_cond = True not in [True for a in atom_symbols if a in self.smiles_h]
+        CBH_0_F_cond = True not in [True for a in atom_symbols if a in self._smiles_h]
         
         cbh_pdts = {} # CBH level products
         cbh_rcts = {} # CBH level reactants
 
         # "important_atoms" are just non-saturated atoms
-        important_atoms = [atom for atom in self.mol_h.GetAtoms() if atom.GetAtomicNum() != saturate]
+        important_atoms = [atom for atom in self._mol_h.GetAtoms() if atom.GetAtomicNum() != saturate]
         important_idx = [atom.GetIdx() for atom in important_atoms]
 
         # Terminal atoms are those that only connected to one atom that is not the saturation atom
@@ -312,7 +299,7 @@ class buildCBH:
                     trigger = True
 
             if trigger:
-                if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self.smiles_h and 'C' in self.smiles_h and self.ignore_F2:
+                if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self._smiles_h and 'C' in self._smiles_h and self.ignore_F2:
                     # if saturation is fluorine and the only elements present are C H O or F
                     cbh_pdts[0], cbh_rcts[0] = self.CBH_0_F()
                 del cbh_rcts[cbh_level]
@@ -403,23 +390,23 @@ class buildCBH:
                 # the indices in graph_adj correspond exactly to the indices in the graph_adj_h case
                 idxs = range(len(self.graph_adj))
             else:
-                idxs = range(len(self.graph_adj_h))
+                idxs = range(self._graph_adj_h_len)
         # cycle through relevant atoms
         for i in idxs:
             # Skip if a given index is a saturation atom
-            if self.graph_h.vs()[i]['AtomicNum'] == saturate:
+            if self._graph_h.vs()[i]['AtomicNum'] == saturate:
                 continue
             # atom indices that are within the given radius
-            atom_inds = np.where(self.graph_dist_h[i] <= dist)[0]
+            atom_inds = np.where(self._graph_dist_h[i] <= dist)[0]
             # create rdkit mol objects from subgraph
-            residual = graph2mol(self.graph_h.subgraph(atom_inds))
+            residual = graph2mol(self._graph_h.subgraph(atom_inds))
             if saturate != 1:
                 # only get impl_valence for H or C since we only want to replace 
                 # H's that are connected to these atoms
                 # ie. we don't want to replace H on OH with F --> OF is a terrible prediction
                 impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in residual.GetAtoms() \
                     if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() in (1,6)}
-                residual = self.replace_implicit_Hs(residual, impl_valence, saturate)
+                residual = self._replace_implicit_Hs(residual, impl_valence, saturate)
 
             if return_smile:
                 # make explicit H's --> implicit
@@ -454,12 +441,12 @@ class buildCBH:
         residuals = [] # will hold residual species
         dist += 1 # a specified distance of 0 implies the given edge --> this ensures this adjustment is made
         # cycle through edges
-        for e in self.graph_h.es():
-            if self.graph_h.vs()[e.source]['AtomicNum'] == saturate or self.graph_h.vs()[e.target]['AtomicNum'] == saturate:
+        for e in self._graph_h.es():
+            if self._graph_h.vs()[e.source]['AtomicNum'] == saturate or self._graph_h.vs()[e.target]['AtomicNum'] == saturate:
                 continue # skip edge if it's connected to a saturation atom
             else:
                 # get shortest paths from edge source and target
-                gsp_s, gsp_t = self.graph_h.get_shortest_paths(e.source), self.graph_h.get_shortest_paths(e.target)
+                gsp_s, gsp_t = self._graph_h.get_shortest_paths(e.source), self._graph_h.get_shortest_paths(e.target)
                 # indices of the shortest paths that are less than 'dist' away from 'e'
                 gsp_si, gsp_ti = np.where(np.array([len(x) for x in gsp_s])<=dist)[0], \
                     np.where(np.array([len(x) for x in gsp_t])<=dist)[0]
@@ -468,14 +455,14 @@ class buildCBH:
                 # define edge indices
                 edge_inds = list(set([x[-1] for x in gsp_s_refine] + [x[-1] for x in gsp_t_refine]))
                 # create rdkit mol objects from subgraph --> MUST be no explicit hydrogens (except for radicals)
-                residual = graph2mol(self.graph_h.subgraph(edge_inds))
+                residual = graph2mol(self._graph_h.subgraph(edge_inds))
                 if saturate != 1:
                     # {atom index : implicit valence} for carbon atoms that have more than 1 implicit hydrogen
                     #   (possibly too specific)
                     impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in residual.GetAtoms() \
                         if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() == 6}
                     # replace implicit hydrogens with the saturation atom
-                    residual = self.replace_implicit_Hs(residual, impl_valence, saturate)
+                    residual = self._replace_implicit_Hs(residual, impl_valence, saturate)
                 if return_smile:
                     # Remove explicit hydrogens from SMILES string
                     residual = Chem.CanonSmiles(Chem.MolToSmiles(residual))
@@ -504,7 +491,7 @@ class buildCBH:
         """
         
         atoms = ['C','O','F','H']
-        coeffs = {a:self.smiles_h.count(a) for a in atoms}
+        coeffs = {a:self._smiles_h.count(a) for a in atoms}
         
         coeff_ch4 = coeffs['C'] - 1/4*coeffs['F']
         coeff_h2o = coeffs['O']
@@ -536,7 +523,7 @@ class buildCBH:
 
 
     @staticmethod
-    def replace_implicit_Hs(mol, impl_valence_dict:dict, change:int):
+    def _replace_implicit_Hs(mol, impl_valence_dict:dict, change:int):
         """
         Replace the implicit hydrogens with a 'change' atom. 
         Assumes 'change' atom is a halogen.
