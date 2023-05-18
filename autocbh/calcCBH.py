@@ -93,7 +93,7 @@ class calcCBH:
                 formation for sources that are not rank 1 (experimental) to 0.
         """
 
-        if force_generate_database is None or dataframe_path is None:
+        if force_generate_database is None and dataframe_path is None:
             raise ValueError('Either a dataframe pkl filepath or a path to a folder holding molecule data in YAML files must be provided to the "dataframe_path" or "force_generate_database" arguments.')
 
         # Generate Database
