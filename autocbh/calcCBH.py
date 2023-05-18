@@ -43,10 +43,13 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, methods: list=[], 
-                 dataframe_path:str=None, method_keys_path:str='data/methods_keys.yaml', 
-                 rankings_path:str='data/rankings.yaml', alternative_rxn_path:str=None, 
-                 force_generate_database:str=None, force_generate_alternative_rxn:str=None, 
+    def __init__(self, methods:list=[], 
+                 dataframe_path:str=None, 
+                 method_keys_path:str='../data/methods_keys.yaml', 
+                 rankings_path:str='../data/rankings.yaml', 
+                 alternative_rxn_path:str=None, 
+                 force_generate_database:str=None, 
+                 force_generate_alternative_rxn:str=None, 
                  zero_out_heats:bool=False):
         """
         ARGUMENTS
@@ -65,11 +68,11 @@ class calcCBH:
                 "DfH" and "DrxnH" are 0 and "source" is np.nan. This final step can be done
                 with the zero_out_heats argument.
 
-        :method_keys_path:                  [str] (default='data/methods_keys.yaml')
+        :method_keys_path:                  [str] (default='../data/methods_keys.yaml')
                 Path to a YAML file that maps the column names of the self.energies 
                 dataframe to a method (ex. method_1: [method_1_E, method_1_zpe])
         
-        :rankings_path:                     [str] (default='data/rankings.yaml')
+        :rankings_path:                     [str] (default='../data/rankings.yaml')
                 Path to a YAML file that maps each method to a ranking.
 
         :alternative_rxn_path:              [str] (default=None)
@@ -90,29 +93,31 @@ class calcCBH:
                 formation for sources that are not rank 1 (experimental) to 0.
         """
 
+        if force_generate_database is None or dataframe_path is None:
+            raise ValueError('Either a dataframe pkl filepath or a path to a folder holding molecule data in YAML files must be provided to the "dataframe_path" or "force_generate_database" arguments.')
+
         # Generate Database
         if force_generate_database:
-            self.energies = pd.DataFrame(generate_database(force_generate_database)[0])
+            self.energies = pd.DataFrame(generate_database(force_generate_database, ranking_path=rankings_path)[0])
         else:
             if dataframe_path:
                 self.energies = pd.read_pickle(dataframe_path)
+            
+            # This will not happen
             else:
-                constants = ['R', 'kB', 'h', 'c', 'amu', 'GHz_to_Hz', 'invcm_to_invm', 'P_ref', 'hartree_to_kcalpermole', 'hartree_to_kJpermole', 'kcalpermole_to_kJpermole','alias']
-                # self.energies = pd.read_pickle('../autoCBH/main/data/energies_Franklin.pkl').drop(constants,axis=1) # for testing
-                # self.energies = pd.read_pickle('./data/energies_Franklin.pkl').drop(constants,axis=1)
                 self.energies = pd.read_pickle('./data/pfas_energies.pkl')
                 # self.energies = generate_database('data/molecule_data/')[0] # something is different
-
                 self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
-                # sort by num C then by SMILES length
-                max_C = max([i.count('C') for i in self.energies.index])
-                self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
                 ###
                 # This stuff should go into test cases
                 # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
                 # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
                 # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
                 # 'm062x_E0','m062x_dlpno','wb97xd_zpe','wb97xd_E0','wb97xd_dlpno']] = nan
+
+        # sort by num C then by SMILES length
+        max_C = max([i.count('C') for i in self.energies.index])
+        self.energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
 
         # Load the methods to use
         with open(method_keys_path, 'r') as f:
@@ -186,7 +191,7 @@ class calcCBH:
         if zero_out_heats:
             # zero out heats of formation for species without experimental heats of formation
             # zero out heats of reaction for all species
-            non_exp_species = [s for s in self.energies.index.values if self.rankings_rev[self.energies.loc[s, 'source']] != 1]
+            non_exp_species = [s for s in self.energies.index.values if (type(self.energies.loc[s, 'source']) is not str and np.isnan(self.energies.loc[s, 'source'])) or self.rankings_rev[self.energies.loc[s, 'source']] != 1]
             self.energies.loc[non_exp_species, ['DfH']] = 0.0
             self.energies.loc[:, ['DrxnH']] = 0.0
 
