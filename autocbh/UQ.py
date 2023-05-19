@@ -223,41 +223,6 @@ class uncertainty_quantification:
             weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[:, 1:], self.calcCBH.energies.index)
 
             self.simulation_results[i_s, 1:] = weighted_Hf
-
-
-    def run_slow(self):
-        """
-        Run uncertainty quantification operation.
-
-        ARGUMENTS
-        ---------
-        None
-
-        RETURNS
-        -------
-        :simulation_results: [np.array] Heats of formation
-                    shape = (num_species x num_simulations)
-        """
-
-        self.simulation_results = np.zeros((self.num_simulations + 1, len(self.calcCBH.energies.index.values))) # extra for the mean
-
-        self.calcCBH.calc_Hf(self.saturate, self.priority, self.max_rung, self.alt_rxn_option)
-        self.simulation_results[0,:] = self.calcCBH.energies.loc[:, 'DfH'].values
-
-        pbar = tqdm(range(0, self.init_simulation_matrix.shape[1]))
-        for i in pbar:
-            pbar.set_description(f'Sample {i+1}')
-            self.calcCBH.energies.loc[self.non_nan_species, 'DfH'] = self.init_simulation_matrix[:,i]
-            # sorted list of molecules that don't have any reference values
-            sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=self.simple_sort)
-
-            # cycle through molecules from smallest to largest
-            for s in sorted_species:
-                self.calcCBH.calc_Hf_from_source(s, inplace=True)
-
-            self.simulation_results[i+1,:] = self.calcCBH.energies.loc[:, 'DfH'].values
-        
-        self.simulation_results = self.simulation_results.T
     
 
     def run_cbh_selection(self, alt_rxn_option:list=None, priority:list=None):

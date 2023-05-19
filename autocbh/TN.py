@@ -430,7 +430,7 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
                                     font_size=label_font_size)
 
     # node color
-    color_scale = 0.2
+    color_scale = 0.3
     normalize_node_colors = (np.array(node_colors) - min(node_colors))/(max(node_colors) - min(node_colors))
     for t, c in zip(labels.values(), normalize_node_colors):
         #manipulate indiviual text objects

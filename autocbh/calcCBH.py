@@ -30,6 +30,8 @@ class calcCBH:
                             properties. {method : list(keys)}
     :rankings:          [dict] Dictionary of the rankings for different 
                             levels of theory. {rank # : list(methods)}
+    :error_messages:    [dict] Dictionary holding logged error messages.
+                            Use calcCBH.print_errors() method.
 
     METHODS
     -------
@@ -89,8 +91,8 @@ class calcCBH:
                 generate and use an alternative_rxn.yaml file.
                 
         :zero_out_heats:                    [bool] (default=False)
-                Will automatically set all heats of reaciton to 0 and all heats of
-                formation for sources that are not rank 1 (experimental) to 0.
+                Will set all heats of reaction to 0 and all heats of formation for
+                sources that are not rank 1 (experimental) to 0.
         """
 
         if force_generate_database is None and dataframe_path is None:
@@ -191,7 +193,7 @@ class calcCBH:
         if zero_out_heats:
             # zero out heats of formation for species without experimental heats of formation
             # zero out heats of reaction for all species
-            non_exp_species = [s for s in self.energies.index.values if (type(self.energies.loc[s, 'source']) is not str and np.isnan(self.energies.loc[s, 'source'])) or self.rankings_rev[self.energies.loc[s, 'source']] != 1]
+            non_exp_species = [s for s in self.energies.index.values if (type(self.energies.loc[s, 'source']) is not str and isnan(self.energies.loc[s, 'source'])) or self.rankings_rev[self.energies.loc[s, 'source']] != 1]
             self.energies.loc[non_exp_species, ['DfH']] = 0.0
             self.energies.loc[:, ['DrxnH']] = 0.0
 
@@ -348,7 +350,7 @@ class calcCBH:
                     elif alt_rxn_option == "best_alt":
                         alt_rxn_keys = [best_alt]
 
-                    alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
+                    alt_rxns = self._check_alt_rxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
                         Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, alt_rxns, skip_precursor_check=True)
                         # Choose the best possible method to assign to the energies dataframe
@@ -374,7 +376,7 @@ class calcCBH:
                 ##### prioritize by user defined rung numbers #####
                 elif alt_rxn_option == "include" and priority == "rung":
                     alt_rxn_keys = list(self.alternative_rxn[s].keys())
-                    alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
+                    alt_rxns = self._check_alt_rxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
                         best_alt = max(alt_rxns.keys())
                         alt_rxns = {best_alt : alt_rxns[best_alt]}
@@ -440,7 +442,7 @@ class calcCBH:
                 ##### prioritize by coeff #####
                 elif alt_rxn_option == "include" and priority in ("abs_coeff", "rel_coeff"):
                     alt_rxn_keys = list(self.alternative_rxn[s].keys())
-                    alt_rxns = self._check_altrxn_usability(s, alt_rxn_keys)
+                    alt_rxns = self._check_alt_rxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
                         if priority == "abs_coeff":
                             rank_totalcoeff = {rank : sum(map(abs, alt_rxns[rank][s].values())) for rank in alt_rxns}
@@ -770,77 +772,6 @@ class calcCBH:
                 weighted_Hf[k] = sum([weights[k][i]*Hf_s[k] for i, Hf_s in enumerate(Hf_ls)])
             
         return weighted_Hrxn, weighted_Hf
-
-
-    def calc_Hf_from_source(self, s:str, source_str:str=None, inplace=False):
-        """
-        Calculate Hrxn and Hf of a species, s, from the 'source' column in 
-        self.energies or a provided source_str. Primarily used for 
-        Uncertainty Quantification.
-
-        ASSUMES ALL REACTANTS RELATED TO THE SOURCE EXIST
-
-        ARGUMENTS
-        ---------
-        :s:             [str] SMILES string of the target species.
-
-        :source_str:    [str] (optional, default=None) string for 
-                            CBH/alternative rung to use.
-            ex) 'CBH-#-S' 
-                (where # is an int/float of the rung and S is the saturation
-                    atom or "alt" for alternative reaction)
-            ex) 'CBHavg-(#-S, #-S, ...)'
-                (average of different rungs, includes alternative rxns)
-
-        :inplace:       [bool] (default=False) 
-                    If True: save directly to self.energies
-                    If False: return the tuple.
-        
-        RETURNS
-        -------
-        if inplace = False:
-            (weighted_Hrxn, weighted_Hf)
-        else:
-            None, saves directly to self.energies
-        """
-
-        if source_str is None:
-            source_str = self.energies.loc[s, 'source']
-
-        rungs = []
-        sats = []
-        if 'CBH' in source_str:
-            if 'avg' in source_str.split('//')[0]:
-                # ex. CBHavg-(#-S, #-S, #-alt)
-                rungs += [float(sub.split('-')[0]) for sub in source_str.split('//')[0][8:-1].split(', ')]
-                sats += [sub.split('-')[1] for sub in source_str.split('//')[0][8:-1].split(', ')]
-            else:
-                # ex. CBH-#-S
-                rungs += [float(source_str.split('//')[0].split('-')[1])]
-                sats += [source_str.split('//')[0].split('-')[2]]
-            
-            methods = source_str.split('//')[1].split('+')
-        else:
-            # if not from CBH rung --> experimental
-            methods = source_str.split('+')
-
-        rxns = {}
-        for i, sat in enumerate(sats):
-            if sat != 'alt':
-                cbh = CBH.buildCBH(s, sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
-                rxns[i] = self._cbh_to_rxn(s, cbh, rungs[i])
-            else:
-                rxns[i] = {s: copy(self.alternative_rxn[s][rungs[i]])}
-                rxns[i][s].update({s:-1})
-        
-        weighted_Hrxn, weighted_Hf = self._weighting_scheme_Hf(s, rxns, skip_precursor_check=True)
-        weighted_Hrxn, weighted_Hf, _ = self._choose_best_method(weighted_Hrxn, weighted_Hf, '')
-
-        if not inplace:
-            return weighted_Hrxn, weighted_Hf
-        else:
-            self.energies.loc[s, 'DfH'] = weighted_Hf
-            self.energies.loc[s, 'DrxnH'] = weighted_Hrxn
 
     
     def calc_Hf_from_source_vectorized(self, s:str, DfH_UQ_array:np.array, DfH_UQ_index:pd.Index, source_str:str=None):
@@ -1446,7 +1377,7 @@ class calcCBH:
         return False, top_rung
 
 
-    def _check_altrxn_usability(self, s:str, alt_rxn_keys:list):
+    def _check_alt_rxn_usability(self, s:str, alt_rxn_keys:list):
         """
         Helper method to check whether the species present in the provided
         alternative reaction(s) exist in the database.
