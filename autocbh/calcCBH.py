@@ -369,8 +369,6 @@ class calcCBH:
 
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
-                        # if s=='CC(O)(F)F':
-                        #     self.energies.loc[s, 'DfH'] = -712.1-0.04029985839758865
                         continue
                     
                 ##### prioritize by user defined rung numbers #####
@@ -618,28 +616,32 @@ class calcCBH:
 
         ARGUMENTS
         ---------
-        :s:         [str] SMILES string of the target species.
+        :s:         [str] 
+            SMILES string of the target species.
         
-        :rxn:       [dict] Includes the negated reactant coefficient
-                        and product coefficients. The species, s, is in
-                        the dictionary with a negated coefficient.
+        :rxn:       [dict] 
+            Includes the negated reactant coefficient and product
+            coefficients. The species, s, is in the dictionary
+            with a negated coefficient.
 
         :skip_precursor_check:  [bool] (default=False)
-                        Whether skip the procedure to check if precursors 
-                        exist in database or if they have real values. 
-                        Suggested to skip only when the cbh_rung is 
-                        validated after check_rung_usability method is
-                        used.
+            Whether skip the procedure to check if precursors exist in 
+            database or if they have real values. Suggested to skip 
+            only when the cbh_rung is validated after 
+            check_rung_usability method is used.
 
         RETURNS
         -------
         (Hrxn, Hf)  [tuple]
-            :Hrxn:  [dict] Heat of reaction calculated for different levels
-                        of theory using CBH.
-                        {'ref' : val, *method : val}
-            :Hf:    [dict] Heat of formation calculated for each of the same 
-                        levels of theory in Hrxn. 
-                        {'ref' : val, *method : val}
+            :Hrxn:  [dict] 
+                Heat of reaction calculated for different levels of 
+                theory using CBH.
+                {'ref' : val, *method : val}
+
+            :Hf:    [dict] 
+                Heat of formation calculated for each of the same levels
+                of theory in Hrxn. 
+                {'ref' : val, *method : val}
         """
 
         if not skip_precursor_check:
@@ -700,23 +702,23 @@ class calcCBH:
 
         ARGUMENTS
         ---------
-        :s:             [str] SMILES string of the target species.
+        :s:             [str] 
+            SMILES string of the target species.
         
         :cbh_or_altrxn: [list(CBH.buildCBH) or dict] 
             CBH.buildCBH object or dictionary containing reactions.
             If dict, it must follow this format: 
                 {rank : {s: {rxn_dict}}}
 
-        :skip_precursor_check [bool] (default = False)
-                        Whether skip the procedure to check if precursors 
-                        exist in database or if they have real values. 
-                        Suggested to skip only when the cbh_rung is 
-                        validated after check_rung_usability method is
-                        used.
+        :skip_precursor_check:  [bool] (default=False)
+            Whether skip the procedure to check if precursors exist in 
+            database or if they have real values. Suggested to skip 
+            only when the cbh_rung is validated after 
+            check_rung_usability method is used.
 
-        :cbh_rungs:     [list] (default=None) list of CBH rungs to weight.
-                            Supply if cbh_or_altrxn is a list of 
-                            CBH.buildCBH objects.
+        :cbh_rungs:     [list] (default=None) 
+            List of CBH rungs to weight. Supply if cbh_or_altrxn 
+            is a list of CBH.buildCBH objects.
 
         RETURNS
         -------
@@ -784,13 +786,14 @@ class calcCBH:
 
         ARGUMENTS
         ---------
-        :s:             [str] SMILES string of the target species.
+        :s:             [str] 
+            SMILES string of the target species.
 
         :DfH_UQ_array:  [np.array] shape=(num_species, num_simulations)
             2D array holding the sampled DfH values for each species.
         
-        :DfH_UQ_index:  [pd.Index] list of species names corresponding to the rows 
-                            of DfH_UQ_array.
+        :DfH_UQ_index:  [pd.Index] 
+            List of species names corresponding to the rows of DfH_UQ_array.
 
         :source_str:    [str] (optional, default=None) 
             String for CBH/alternative rung to use.
@@ -1006,7 +1009,7 @@ class calcCBH:
         # Choose the best possible method to assign to the energies dataframe
         if all([isnan(v) for v in Hrxn.values()]):
             # if all computed heats of reactions are NaN
-            return nan, nan, 'NaN'
+            return nan, nan, nan
 
         else:
             # list of all levels of theory in Hf and Hrxn
@@ -1071,7 +1074,7 @@ class calcCBH:
 
                         return weighted_hrxn, weighted_hf, new_label
 
-        return nan, nan, 'NaN'
+        return nan, nan, nan
 
 
     def _weight(self, *Hrxn: float):

@@ -302,7 +302,10 @@ class buildCBH:
                 if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self._smiles_h and 'C' in self._smiles_h and self.ignore_F2:
                     # if saturation is fluorine and the only elements present are C H O or F
                     cbh_pdts[0], cbh_rcts[0] = self.CBH_0_F()
-                del cbh_rcts[cbh_level]
+                try:
+                    del cbh_rcts[cbh_level]
+                except KeyError as e:
+                    raise KeyError(f'SMILES: "{self.smiles}" with CBH-{cbh_level}-{saturate_sym} does not exist. Consider whether this is possible.')
                 if cbh_rcts[0]['[H][H]'] == 0:
                     del cbh_rcts[0]['[H][H]']
                 break
