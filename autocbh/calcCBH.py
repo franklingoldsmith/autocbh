@@ -198,6 +198,7 @@ class calcCBH:
             self.energies.loc[:, ['DrxnH']] = 0.0
 
         self.error_messages = {}
+        self.rxns = {}
 
 
     def calc_Hf(self, saturate:list=[1], priority:str="abs_coeff", max_rung:int=None, alt_rxn_option:str=None, surface_smiles=None):
@@ -340,6 +341,7 @@ class calcCBH:
         # cycle through molecules from smallest to largest
         for s in sorted_species:
             self.error_messages[s] = []
+            self.rxns[s] = {}
 
             if s in self.alternative_rxn and alt_rxn_option and alt_rxn_option != "ignore":
                 ##### avg and avg alternative rxns options #####
@@ -1259,9 +1261,13 @@ class calcCBH:
                             p_rung = d_rung[precur][0]
                         elif label in d_sat[precur]: 
                             p_sat = label
-                            # if multiple 'alt' reactions, this could be an issue
-                            p_rung_idx = d_sat[precur].index(label)
-                            p_rung = d_rung[precur][p_rung_idx]
+                            if label == 'alt':
+                                # choose highest alt reaction if applicable 
+                                p_rung = max([d_rung[precur][i] for i, v in enumerate(d_sat[precur]) if v=='alt'])
+                            else:
+                                # if multiple 'alt' reactions, this could be an issue
+                                p_rung_idx = d_sat[precur].index(label)
+                                p_rung = d_rung[precur][p_rung_idx]
                         else:
                             # Choose the rxn with the lowest rung number
                             # Lowest rung number --> usually smaller species with exp / better theoretical values
@@ -1270,25 +1276,39 @@ class calcCBH:
                             p_rung = d_rung[precur][idx_lowest_rung]
 
                         if p_sat != 'alt':
-
-                            p = CBH.buildCBH(precur, p_sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
-                            try: 
-                                self.energies.loc[list(p.cbh_pdts[p_rung].keys()) + list(p.cbh_rcts[p_rung].keys())]
-                                # To the original equation, add the precursor's precursors (rcts + pdts) and delete the precursor from the orig_rxn
-                                rxn = add_dicts(rxn, {k : rxn[precur]*v for k, v in p.cbh_pdts[p_rung].items()}, {k : -rxn[precur]*v for k, v in p.cbh_rcts[p_rung].items()})
-                                del rxn[precur]
-                            except KeyError:
-                                # new precursor does not exist in database
-                                dont_exist = [pp for pp in p.cbh_pdts[p_rung].keys() if pp in self.energies.index.values]
-                                dont_exist += [pp for pp in p.cbh_rcts[p_rung].keys() if pp in self.energies.index.values]
-                                self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
-                                self.error_messages[s][-1] += f"\n\t\tThese reactants were: {dont_exist}"
-                                self.error_messages[s][-1] += f"\n\tThere is a possibility that CBH-{test_rung}-{label} of {s} \n\tis equivalent to a lower rung, but this cannot be rigorously tested automatically."
-                                verbose_error = True
-                                break
+                            if precur in self.rxns and p_sat in self.rxns[precur]:
+                                try: 
+                                    self.energies.loc[list(self.rxns[precur][p_sat].keys())]
+                                    # To the original equation, add the precursor's precursors (rcts + pdts) and delete the precursor from the orig_rxn
+                                    rxn = add_dicts(rxn, {k : rxn[precur]*v for k, v in self.rxns[precur][p_sat].items()})
+                                    del rxn[precur]
+                                except KeyError:
+                                    # new precursor does not exist in database
+                                    dont_exist = [pp for pp in self.rxns[precur][p_sat].keys() if pp not in self.energies.index.values]
+                                    self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
+                                    self.error_messages[s][-1] += f"\n\t\tThese reactants were: {dont_exist}"
+                                    self.error_messages[s][-1] += f"\n\tThere is a possibility that CBH-{test_rung}-{label} of {s} \n\tis equivalent to a lower rung, but this cannot be rigorously tested automatically."
+                                    verbose_error = True
+                                    break
+                            else:
+                                p = CBH.buildCBH(precur, p_sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
+                                try: 
+                                    self.energies.loc[list(p.cbh_pdts[p_rung].keys()) + list(p.cbh_rcts[p_rung].keys())]
+                                    # To the original equation, add the precursor's precursors (rcts + pdts) and delete the precursor from the orig_rxn
+                                    rxn = add_dicts(rxn, {k : rxn[precur]*v for k, v in p.cbh_pdts[p_rung].items()}, {k : -rxn[precur]*v for k, v in p.cbh_rcts[p_rung].items()})
+                                    del rxn[precur]
+                                except KeyError:
+                                    # new precursor does not exist in database
+                                    dont_exist = [pp for pp in p.cbh_pdts[p_rung].keys() if pp not in self.energies.index.values]
+                                    dont_exist += [pp for pp in p.cbh_rcts[p_rung].keys() if pp not in self.energies.index.values]
+                                    self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
+                                    self.error_messages[s][-1] += f"\n\t\tThese reactants were: {dont_exist}"
+                                    self.error_messages[s][-1] += f"\n\tThere is a possibility that CBH-{test_rung}-{label} of {s} \n\tis equivalent to a lower rung, but this cannot be rigorously tested automatically."
+                                    verbose_error = True
+                                    break
                         else:
                             if set(self.alternative_rxn[precur][p_rung].keys()).issubset(self.energies.index.values):
-                                rxn = add_dicts(rxn, {rct: coeff*rxn[precur] for rct, coeff in self.alternative_rxn[precur][p_rung].items()})
+                                rxn = add_dicts(rxn, {rct: coeff*rxn[precur] for rct, coeff in self.alternative_rxn[precur][p_rung].items() if rct != precur})
                                 del rxn[precur]
                             else:
                                 self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
@@ -1321,8 +1341,10 @@ class calcCBH:
                     test_rung -= 1
                     continue
                 else:
+                    self.rxns[s][label] = rxn
                     return test_rung
             else:
+                self.rxns[s][label] = rxn
                 return test_rung
             
         return test_rung
@@ -1430,6 +1452,8 @@ class calcCBH:
                 self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
                 del alt_rxns[alt_rank]
                 self.error_messages[s][-1] += '\nTrying remaining alternative rung(s) instead.'
+            
+            self.rxns[s][str(alt_rank)+'-alt'] = {k: v for k, v in alt_rxns[alt_rank][s].items() if k != s}
 
         if len(alt_rxns) != 0:
             return alt_rxns
