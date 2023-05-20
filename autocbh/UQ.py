@@ -300,6 +300,7 @@ class uncertainty_quantification:
 
                 self.simulation_results[c, i_s, 1:] = weighted_Hf
             self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
+            self.calcCBH.rxns = {}
 
         self.cbh_selection_combos = combos
         return combos
@@ -350,6 +351,7 @@ class uncertainty_quantification:
                 self.simulation_results[sat_i, i_s, 1:] = weighted_Hf
             
             self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
+            self.calcCBH.rxns = {}
 
         self.cbh_sat_combos = sats
         return sats

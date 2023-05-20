@@ -13,7 +13,7 @@ import calcCBH
 
 class thermochemical_network:
 
-    def __init__(self, species:str or list or calcCBH.calcCBH, max_rung:int=np.inf, saturate:int or str=1, surface_smiles:str=None):
+    def __init__(self, species:str or list or calcCBH.calcCBH, max_rung:int=np.inf, saturate:int or str=1, surface_smiles:str=None, use_decomposed_rxns:bool=False):
         """
         Class to build and visualize thermochemical network.
         In other words, see what molecules depend on one another using the CBH method.
@@ -45,6 +45,8 @@ class thermochemical_network:
         self.smiles2sat = {}
         self.smiles2rank = {}
         self._uses_dataframe = False
+        self.use_decomposed_rxns = use_decomposed_rxns
+        self.calcCBH_rxns = None
         
         # check species argument
         if isinstance(species, str):
@@ -64,6 +66,7 @@ class thermochemical_network:
             self._uses_dataframe = True
             smiles2source = dict(zip(list(species.energies.index), species.energies.loc[:,'source'].values.tolist()))
             self.species = list(smiles2source.keys())
+            self.calcCBH_rxns = species.rxns
 
             for s in self.species:
                 if len(smiles2source[s].split('//')) > 1:
@@ -126,9 +129,17 @@ class thermochemical_network:
         self.index2smiles = {i : smiles for i, smiles in enumerate(self.all_smiles)}
         self.smiles2index = {v:k for k, v in self.index2smiles.items()}
 
-        self.graph = nx.DiGraph()
         # Build graph
-        self._build()
+        if self._uses_dataframe and self.use_decomposed_rxns:
+            # uses calcCBH.rxns attribute
+            # has no edge weights
+            g = {}
+            for s, d in self.calcCBH_rxns.items():
+                g[s] = [p for dd in d.values() for p in dd.keys()]
+            self.graph = nx.DiGraph(g)
+        else:
+            self.graph = nx.DiGraph()
+            self._build()
 
 
     def _build(self):
@@ -192,10 +203,10 @@ class thermochemical_network:
         if prev_cbh_rung == 0:
             return 
         
-        def _inner_loop(smiles, cbh, highest_rung):
+        def _inner_loop(smiles, dict_iter, highest_rung, isalt=False):
             species_index = self.smiles2index[smiles]
-            for precursors_dict in [cbh.cbh_pdts[highest_rung], cbh.cbh_rcts[highest_rung]]:
-                for s, coeff in precursors_dict.items():
+            for precursors_dict in dict_iter:
+                for s in precursors_dict.keys():
                     if s not in self.smiles2index.keys():
                         self.smiles2index[s] = max(self.smiles2index.values()) + 1
                         self.index2smiles[max(self.smiles2index.values())] = s
@@ -222,10 +233,15 @@ class thermochemical_network:
                 if rung is None or sat is None:
                     return
 
-                cbh = CBH.buildCBH(smiles, saturate=sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
-                highest_rung = rung if rung <= self.max_rung else self.max_rung
+                if sat != 'alt':
+                    cbh = CBH.buildCBH(smiles, saturate=sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
+                    highest_rung = rung if rung <= self.max_rung else self.max_rung
+                    dict_iter = [cbh.cbh_pdts[highest_rung], cbh.cbh_rcts[highest_rung]]
+                    _inner_loop(smiles, dict_iter, highest_rung)
 
-                _inner_loop(smiles, cbh, highest_rung)
+                elif sat == 'alt' and self._uses_dataframe:
+                    dict_iter = [self.calcCBH_rxns[smiles][str(rung)+'-alt' if str(rung).split('.')[1] != '0' else str(int(rung))+'-alt']]
+                    _inner_loop(smiles, dict_iter, highest_rung)
         else:
             try:
                 cbh = CBH.buildCBH(smiles, saturate=self.saturate, allow_overshoot=True, surface_smiles=self.surface_smiles)
@@ -233,8 +249,8 @@ class thermochemical_network:
                 return
 
             highest_rung = cbh.highest_cbh if cbh.highest_cbh <= self.max_rung else self.max_rung
-
-            _inner_loop(smiles, cbh, highest_rung)
+            dict_iter = [cbh.cbh_pdts[highest_rung], cbh.cbh_rcts[highest_rung]]
+            _inner_loop(smiles, dict_iter, highest_rung)
 
 
 
@@ -295,7 +311,8 @@ class thermochemical_network:
                   save_fig_path=save_fig_path,
                   dpi=dpi,
                   label_font_size=label_font_size, 
-                  edge_rank=edge_rank)
+                  edge_rank=edge_rank, 
+                  use_decomposed_rxns=self.use_decomposed_rxns)
 
 
     def descendent_subgraph_of(self, smiles:str or list):
@@ -329,7 +346,7 @@ class thermochemical_network:
 
 def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
                 figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12,
-                edge_rank:bool=False):
+                edge_rank:bool=False, use_decomposed_rxns:bool=False):
     """
     Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
     Nodes are color-coded for the importance of a given molecule.
@@ -401,7 +418,10 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
 
 
     # ax = plt.figure(figsize=figsize)
-    fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
+    if not use_decomposed_rxns:
+        fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
+    else:
+        fig, axs = plt.subplots(ncols=2,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01]})
     pos = graphviz_layout(graph, prog='dot')
     edge_cmap = plt.cm.tab10
     node_cmap = plt.cm.Blues
@@ -409,16 +429,19 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
         plt.suptitle(title, fontsize=30)
     
     used_rank = False
-    if edge_rank:
-        try:
-            edge_color = [graph[u][v]['rank'] for u,v in graph.edges]
-            used_rank = True
-        except:
+    if not use_decomposed_rxns:
+        if edge_rank:
+            try:
+                edge_color = [graph[u][v]['rank'] for u,v in graph.edges]
+                used_rank = True
+            except:
+                edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
+        else:
             edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
-    else:
-        edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
     
-    nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=edge_color, edge_cmap=edge_cmap, edge_vmin=min(edge_color),edge_vmax=max(edge_color))
+        nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=edge_color, edge_cmap=edge_cmap, edge_vmin=min(edge_color),edge_vmax=max(edge_color))
+    else:
+        nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9)
 
     node_colors = [v for v in nx.get_node_attributes(graph, 'num_ancestors').values()]
     
@@ -443,20 +466,21 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
     cbar.ax.tick_params(labelsize=20)
 
     # plot edge colorbar (rung)
-    edge_cmap_bounds = list(set(edge_color))
-    if len(edge_cmap_bounds) == 1:
-        edge_cmap_bounds = [edge_cmap_bounds[-1]-1] + edge_cmap_bounds
-        edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
-    else:
-        edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
-    edge_cmap_bounds = np.array(edge_cmap_bounds)
-    edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
-    cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
-    if used_rank:
-        cbar.set_label(label='Level of Theory', size=20)
-    else:
-        cbar.set_label(label='CBH Rung', size=20)
-    cbar.ax.tick_params(labelsize=20)
+    if not use_decomposed_rxns:
+        edge_cmap_bounds = list(set(edge_color))
+        if len(edge_cmap_bounds) == 1:
+            edge_cmap_bounds = [edge_cmap_bounds[-1]-1] + edge_cmap_bounds
+            edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
+        else:
+            edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
+        edge_cmap_bounds = np.array(edge_cmap_bounds)
+        edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
+        cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
+        if used_rank:
+            cbar.set_label(label='Level of Theory', size=20)
+        else:
+            cbar.set_label(label='CBH Rung', size=20)
+        cbar.ax.tick_params(labelsize=20)
     plt.tight_layout()
     if save_fig_path and not dpi:
         plt.savefig(save_fig_path)
