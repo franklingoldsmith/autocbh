@@ -912,7 +912,7 @@ class calcCBH:
         return weighted_Hrxn, weighted_Hf
 
 
-    def calc_Hf_allrungs(self, s: str, saturate: int or str=1, surface_smiles:str=None) -> tuple:
+    def calc_Hf_allrungs(self, smiles: str, saturate: int or str=1, surface_smiles:str=None) -> tuple:
         """
         Calculates the Hf of a given species at each CBH rung.
         Assumes that calc_Hf has already been run or the database
@@ -920,7 +920,7 @@ class calcCBH:
 
         ARGUMENTS
         ---------
-        :s:         [str] SMILES string of the target species.
+        :smiles:         [str] SMILES string of the target species.
 
         :saturate:  [int or str] (default=1)
                 Atomic number of saturation element.
@@ -943,7 +943,7 @@ class calcCBH:
             saturate = ptable.GetAtomicNumber(saturate)
         saturate_sym = ptable.GetElementSymbol(saturate)
 
-        s = CanonSmiles(s) # standardize SMILES
+        s = CanonSmiles(smiles) # standardize SMILES
         s_cbh = CBH.buildCBH(s, saturate, surface_smiles=surface_smiles)
 
         Hf = {}
