@@ -73,11 +73,11 @@ class thermochemical_network:
                     # CBH used
                     if 'avg' in smiles2source[s].split('//')[0]:
                         # ex. CBHavg-(N-S, N-S, N-alt)
-                        self.smiles2rung[s] = [float(sub.split('-')[0]) for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
+                        self.smiles2rung[s] = [float(sub.split('-')[0]) if ':' not in sub else float(sub.split('-')[0].split(':')[0]) for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
                         self.smiles2sat[s] = [sub.split('-')[1] for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
                     else:
                         # ex. CBH-N-S
-                        self.smiles2rung[s] = [float(smiles2source[s].split('//')[0].split('-')[1])]
+                        self.smiles2rung[s] = [float(smiles2source[s].split('//')[0].split('-')[1]) if ':' not in smiles2source[s] else float(smiles2source[s].split('//')[0].split('-')[1].split(':')[0])]
                         self.smiles2sat[s] = [smiles2source[s].split('//')[0].split('-')[2]]
                     self.smiles2rank[s] = species.rankings_rev[smiles2source[s].split('//')[1].split('+')[0]]
                 else:
