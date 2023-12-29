@@ -1,0 +1,24 @@
+certifi==2022.12.7
+easydict==1.9
+igraph @ file:///Users/runner/miniforge3/conda-bld/python-igraph_1654777019863/work
+matplotlib @ file:///Users/runner/miniforge3/conda-bld/matplotlib-suite_1661439919284/work
+memory-profiler==0.61.0
+munkres==1.1.4
+networkx @ file:///opt/conda/conda-bld/networkx_1647437648384/work
+notebook @ file:///private/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_98mevid06x/croots/recipe/notebook_1659083668559/work
+openpyxl @ file:///tmp/build/80754af9/openpyxl_1632777717936/work
+pandas==1.4.4
+pip==22.2.2
+pipdeptree==2.11.0
+pycairo==1.21.0
+pygraphviz @ file:///private/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_01qm0cnzo0/croot/pygraphviz_1671045581559/work
+pytest==7.2.0
+PyYAML @ file:///Users/runner/miniforge3/conda-bld/pyyaml_1666772473931/work
+reportlab==3.5.68
+scipy==1.9.1
+SQLAlchemy @ file:///Users/runner/miniforge3/conda-bld/sqlalchemy_1659998910711/work
+tqdm==4.64.1
+typing_extensions @ file:///private/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_ff5_5nqr6l/croots/recipe/typing_extensions_1659638832447/work
+unicodedata2 @ file:///Users/runner/miniforge3/conda-bld/unicodedata2_1649111971119/work
+wheel==0.37.1
+zstandard @ file:///Users/runner/miniforge3/conda-bld/zstandard_1655887918043/work

@@ -1,0 +1,21 @@
+# THIS DATA IS NOT ACCURATE
+alias:
+- ch3ch2ch2ch3
+smiles: CCCC
+theory:
+  anl0: {}
+  b2plypd3:
+    b2plypd3_E0: -555.196246
+  f12b:
+    b2plypd3_zpe: 0.100947
+    f12b: -554.95711248
+  m062x:
+    m062x_E0: -555.35128
+  m062x_dlpno:
+    m062x_dlpno: -554.9038939703
+    m062x_zpe: 0.101574
+  wb97xd:
+    wb97xd_E0: -555.383948
+  wb97xd_dlpno:
+    wb97xd_dlpno: -554.9039012148
+    wb97xd_zpe: 0.101037

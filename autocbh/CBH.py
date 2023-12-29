@@ -73,6 +73,9 @@ class buildCBH:
                 molecule is adsorbed to or physiosorbed to. Must be a single atom.
                 i.e., '[Pt]'
         """
+        if smiles == '[H][H]':
+            raise KeyError(f'SMILES: "[H][H]". It is impossible to generate a CBH scheme for "[H][H]".')
+
         if surface_smiles and surface_smiles not in smiles and '.' in smiles:
             raise NameError(f'Cannot use a physiosorbed species with a surface that is not present in the SMILES string.')
         elif '.' in smiles and surface_smiles is None:
@@ -154,14 +157,14 @@ class buildCBH:
                 
                 if saturate == 1:
                     # Get number of H in product (bakes in stoichiometry)
-                    pdt_H = sum([self.cbh_pdts[0][smiles]*Chem.MolFromSmiles(smiles).GetAtomWithIdx(0).GetTotalNumHs() \
-                        for smiles in self.cbh_pdts[0].keys() if '[H][H]' not in smiles])
+                    pdt_H = sum([self.cbh_pdts[0][s]*Chem.MolFromSmiles(s).GetAtomWithIdx(0).GetTotalNumHs() \
+                        for s in self.cbh_pdts[0].keys() if '[H][H]' not in smiles])
                     # Get number of H in target molecule
                     rct_H = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
                     num_sat = rct_H - pdt_H
                 elif saturate != 1:
-                    pdt_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in self.cbh_pdts[0].items()])
-                    rct_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in self.cbh_rcts[0].items() if f'{saturate_sym}{saturate_sym}' not in smiles])
+                    pdt_sat = sum([coeff*s.count(saturate_sym) for s, coeff in self.cbh_pdts[0].items()])
+                    rct_sat = sum([coeff*s.count(saturate_sym) for s, coeff in self.cbh_rcts[0].items() if f'{saturate_sym}{saturate_sym}' not in s])
                     rct_sat += self.smiles.count(saturate_sym)
                     num_sat = rct_sat - pdt_sat
                 b = np.array([[num_surfs], [num_sat]])
@@ -449,14 +452,16 @@ class buildCBH:
                 continue # skip edge if it's connected to a saturation atom
             else:
                 # get shortest paths from edge source and target
-                gsp_s, gsp_t = self._graph_h.get_shortest_paths(e.source), self._graph_h.get_shortest_paths(e.target)
+                shortest_paths_source = self._graph_h.get_shortest_paths(e.source)
+                shortest_paths_target = self._graph_h.get_shortest_paths(e.target)
                 # indices of the shortest paths that are less than 'dist' away from 'e'
-                gsp_si, gsp_ti = np.where(np.array([len(x) for x in gsp_s])<=dist)[0], \
-                    np.where(np.array([len(x) for x in gsp_t])<=dist)[0]
-                # refine 'gsp_s/t' to only include relevant arrays
-                gsp_s_refine, gsp_t_refine = (gsp_s[i] for i in gsp_si), (gsp_t[i] for i in gsp_ti)
+                shortest_paths_source_inds = np.where(np.array([len(x) for x in shortest_paths_source])<=dist)[0]
+                shortest_paths_target_inds = np.where(np.array([len(x) for x in shortest_paths_target])<=dist)[0]
+                # refine 'shortest_paths_source/target' to only include relevant arrays
+                shortest_paths_source_refined = (shortest_paths_source[i] for i in shortest_paths_source_inds)
+                shortest_paths_target_refined = (shortest_paths_target[i] for i in shortest_paths_target_inds)
                 # define edge indices
-                edge_inds = list(set([x[-1] for x in gsp_s_refine] + [x[-1] for x in gsp_t_refine]))
+                edge_inds = list(set([x[-1] for x in shortest_paths_source_refined] + [x[-1] for x in shortest_paths_target_refined]))
                 # create rdkit mol objects from subgraph --> MUST be no explicit hydrogens (except for radicals)
                 residual = graph2mol(self._graph_h.subgraph(edge_inds))
                 if saturate != 1:

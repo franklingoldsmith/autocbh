@@ -1,0 +1,22 @@
+# THIS DATA MAY NOT BE ACCURATE
+alias:
+- ch3cf2cf2ch3
+alternative_rxn:
+  1.5:
+    C: -2
+    CC: -1
+    CCC: 2
+    FCF: 2
+heat_of_formation:
+  CBHavg-(2-H, 2-F)//f12b: -964.1640793168818
+heat_of_reaction:
+  CBHavg-(2-H, 2-F)//f12b: 0.0
+smiles: CC(F)(F)C(C)(F)F
+theory:
+  b2plypd3:
+    b2plypd3_E0: -555.196246
+  f12b:
+    b2plypd3_zpe: 0.100947
+    f12b: -554.95711248
+  m062x:
+    m062x_E0: -555.35128

@@ -3,6 +3,7 @@ from calcCBH import calcCBH
 import CBH
 import os, sys
 sys.path.append('.')
+sys.path.append('..')
 from rdkit.Chem import MolFromSmiles, AddHs
 from copy import copy
 from tqdm import tqdm

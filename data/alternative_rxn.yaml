@@ -3,10 +3,10 @@ CC(C)(F)F:
     C: -1
     CCC: 1
     FCF: 1
-CC(F)(F)F:
-  2:
-    CC: 0.5
-    FC(F)(F)C(F)(F)F: 0.5
+# CC(F)(F)F:
+#   2:
+#     CC: 0.5
+#     FC(F)(F)C(F)(F)F: 0.5
 CC(F)(F)C(F)(F)F:
   1.5:
     CC: -0.5

@@ -66,6 +66,11 @@ def read_data(file: str, check_alternative_rxn=True):
     :molecule:  [dict] dictionary representation of yaml file
     
     """
+    if not os.path.isfile(file):
+        raise FileNotFoundError(f'Provided path to file does not exist: {file}')
+    ext = os.path.splitext(file)[-1].lower()
+    if ext not in ('.yaml', '.yml'):
+        raise NameError(f'Provided file must be a YAML file with correct extension (.yaml, .yml). Instead, {file} was given.')
     with open(file,'r') as f:
         molecule = yaml.safe_load(f)
 
@@ -90,32 +95,27 @@ def read_data(file: str, check_alternative_rxn=True):
                         try:
                             canon_smiles = Chem.CanonSmiles(smiles)
                         except:
-                            print(f'ParseError: entered SMILES string is not valid')
+                            print(f'Parsing Error: entered SMILES string is not valid')
                             print(f'\tRung {rung} in file: {file}')
                             print('\tThis reaction will not be added to file until fixed.')
                             record_bad_rungs.append(rung)
-                            break
+                            continue
                         
                         if canon_smiles in new_alt_rxn_dict[rung]:
                             # triggers if equivalent smiles strings are in the alternative_rxn file
-                            print(f'Error: alterantive_CBH for rung {rung} contains multiple smiles equivalent keys.\n\tFile found here: {file}')
+                            print(f'Multiple equivalent rungs error: alterantive_CBH for rung {rung} contains multiple smiles equivalent keys.\n\tFile found here: {file}')
                             print('\tThis reaction will not be added to file until fixed.')
                             record_bad_rungs.append(rung)
-                            break
+                            continue
                         else:
                             new_alt_rxn_dict[rung][Chem.CanonSmiles(canon_smiles)] = coeff
 
-                    else: # continue if inner loop didn't break
-                        continue
-                    # break if inner loop broke
-                    break
-
                 # if rung is not int or float
                 else:
-                    print(f'ArgumentError: entered "rung" number must be of type int or float. \n\tInstead got: {rung, type(rung)}.')
+                    print(f'Error with argument: entered "rung" number must be of type int or float. \n\tInstead got: {rung, type(rung)}.')
                     print(f'\tThis reaction will not be added to molecule until fixed.')
                     record_bad_rungs.append(rung)
-                    break
+                    continue
 
             else: # if inner loop didn't break, add alterantive rxn
                 molecule['alternative_rxn'][rung] = new_alt_rxn_dict[rung]
@@ -124,7 +124,6 @@ def read_data(file: str, check_alternative_rxn=True):
                 del molecule['alternative_rxn'][rung]
             if not molecule['alternative_rxn']: # if empty
                 del molecule['alternative_rxn']
-
         
     return molecule
 
@@ -155,10 +154,18 @@ def generate_database(folder_path:str, ranking_path:str):
     method_keys = {}        # {method : [necessary keys for calculation]}
 
     # load rankings
+    if not os.path.isfile(ranking_path):
+        raise FileNotFoundError(f'The arg "ranking_path" is not a valid path to a rankings file: ({ranking_path})')
     with open(ranking_path, 'r') as f:
         rankings = yaml.safe_load(f)
 
+    if not os.path.isdir(folder_path):
+        raise NotADirectoryError(f'The arg "folder_path" is not a valid path to a directory: ({folder_path})')
+
     for filename in os.listdir(folder_path):
+        ext = os.path.splitext(filename)[-1].lower()
+        if ext not in ('.yaml', '.yml'):
+            continue
         f = os.path.join(folder_path, filename)
         if os.path.isfile(f):
             m = read_data(f, check_alternative_rxn=False)
@@ -189,11 +196,11 @@ def generate_database(folder_path:str, ranking_path:str):
             
             if 'heat_of_formation' in m:
                 for method in m['heat_of_formation']:
-                    lvl_theory = method.split('//')[1].split('+')[0] if 'CBH' in method else method
-                    if isnan(rank) or (not isnan(rank) and rankings[lvl_theory] < rank):
+                    lvl_theory_of_method = method.split('//')[1].split('+')[0] if 'CBH' in method else method
+                    if isnan(rank) or (not isnan(rank) and rankings[lvl_theory_of_method] < rank):
                         energies[m['smiles']]['DfH'] = m['heat_of_formation'][method]
                         energies[m['smiles']]['source'] = method
-                        rank = rankings[lvl_theory] if 'CBH' in method else rankings[method]
+                        rank = rankings[lvl_theory_of_method] if 'CBH' in method else rankings[method]
 
             if 'heat_of_reaction' in m and 'heat_of_formation' in m:
                     energies[m['smiles']]['DrxnH'] = m['heat_of_reaction'][method]
@@ -204,11 +211,20 @@ def generate_database(folder_path:str, ranking_path:str):
                 energies[m['smiles']]['DfH'] = 0.
                 energies[m['smiles']]['source'] = nan
 
+    if len(energies) == 0:
+        raise FileExistsError(f'No files in provided folder path had valid YAML files (path={folder_path}).')
+
     energies = pd.DataFrame(energies).T
     # energies[['DrxnH']] = 0
     max_C = max([i.count('C') for i in energies.index])
     energies.sort_index(key=lambda x: x.str.count('C')*max_C+x.str.len(),inplace=True)
-    energies.to_dict()
+
+    methods_to_delete = []
+    for method, keys in method_keys.items():
+        if keys == []:
+            methods_to_delete.append(method)
+    for method in methods_to_delete:
+        del method_keys[method]
 
     return energies, method_keys
 

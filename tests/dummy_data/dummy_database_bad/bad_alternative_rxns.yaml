@@ -1,0 +1,10 @@
+smiles: CC
+alternative_rxn: 
+  wrong:
+    C: 3
+  1:
+    C: 2
+    notasmile: 3
+  2.:
+    C: 3
+    notasmile: 3

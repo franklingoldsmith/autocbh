@@ -1,0 +1,32 @@
+anl0:
+- av5z
+- core_X_qz
+- core_0_qz
+- core_X_tz
+- ci_DK
+- ccT
+- core_0_tz
+- zpe_harm
+- avqz
+- zpe
+- ci_NREL
+- ccQ
+- zpe_anharm
+b2plypd3:
+- b2plypd3_E0
+f12b:
+- b2plypd3_zpe
+- f12b
+m062x:
+- m062x_E0
+m062x_dlpno:
+- m062x_zpe
+- m062x_dlpno
+wb97xd:
+- wb97xd_E0
+wb97xd_dlpno:
+- wb97xd_zpe
+- wb97xd_dlpno
+beef_vdw:
+- beef_vdw_E0
+- beef_vdw_zpe
