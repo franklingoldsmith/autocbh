@@ -2,7 +2,7 @@
 # Test Suite for calcCBH.py #
 #############################
 
-from autocbh.calcCBH import calcCBH
+from autocbh.calcCBH import calcCBH, add_dicts
 from autocbh.CBH import buildCBH
 from pytest import raises
 import os
@@ -317,6 +317,64 @@ class TestWeightingSchemeHf:
         weighted_Hf = {k:np.round(v, 8) for k, v in weighted_Hf.items()}
         assert weighted_Hrxn_true == weighted_Hrxn and weighted_Hf == weighted_Hf_true
 
+    def test_single_rxn_weight_None(self):
+        self.c.rxns[self.s] = {'H':None}
+        weighted_Hrxn, weighted_Hf = self.c._weighting_scheme_Hf(s=self.s, labels=['H'], skip_precursor_check=True, hrxn_fcns={})
+        assert np.isnan(tuple(weighted_Hf.values())[0]) and np.isnan(tuple(weighted_Hrxn.values())[0])
+
+    def test_single_rxn_weight_empty_dict(self):
+        self.c.rxns[self.s] = {'H':{}}
+        weighted_Hrxn, weighted_Hf = self.c._weighting_scheme_Hf(s=self.s, labels=['H'], skip_precursor_check=True, hrxn_fcns={})
+        assert np.isnan(tuple(weighted_Hf.values())[0]) and np.isnan(tuple(weighted_Hrxn.values())[0])
+    
+    def test_mult_rxn_weight_both_None_or_empty_dict(self):
+        self.c.rxns[self.s] = {'H':{}, 'F':None}
+        weighted_Hrxn, weighted_Hf = self.c._weighting_scheme_Hf(s=self.s, labels=['H', 'F'], skip_precursor_check=True, hrxn_fcns={})
+        assert np.isnan(tuple(weighted_Hf.values())[0]) and np.isnan(tuple(weighted_Hrxn.values())[0])
+    
+    def test_mult_rxn_weight_hetero_None_empty_real_value(self):
+        full_rxns = {
+            '1': self.new_rxn_1_full,
+            '2': self.new_rxn_2_full
+        }
+        species = {k: list(v.keys()) for k, v in full_rxns.items()}
+        self.c.rxns[self.s] = {
+            '1': self.new_rxn_1,
+            '2': self.new_rxn_2,
+            'H': None,
+            'F': {}
+        }
+        labels = ['1', '2', 'H', 'F']
+        weighted_Hrxn, weighted_Hf = self.c._weighting_scheme_Hf(s=self.s, labels=labels, skip_precursor_check=True, hrxn_fcns={})
+
+        Hrxns = []
+        Hf_partial_calcs = []
+        for l in labels[:2]:
+            Hrxns.append(stoichiometric_math(energies_df=self.c.energies, full_rxn=full_rxns[l], species=species[l], 
+                                       columns=self.methods_keys, convert_from_hartree_to_kjmol=True))
+            Hf_partial_calcs.append(stoichiometric_math(energies_df=self.c.energies, full_rxn=full_rxns[l], species=species[l],
+                                                        columns='DfH', convert_from_hartree_to_kjmol=False))
+        denom = abs(1/Hrxns[0]) + abs(1/Hrxns[1])
+        weight1 = abs(1/Hrxns[0]) / denom
+        weight2 = abs(1/Hrxns[1]) / denom
+
+        denom2 = abs(1/Hf_partial_calcs[0]) + abs(1/Hf_partial_calcs[1])
+        weight_ref1 = abs((1/Hf_partial_calcs[0])) / denom2
+        weight_ref2 = abs((1/Hf_partial_calcs[1])) / denom2
+
+        Hf_true1_beef = weight1*(Hrxns[0] - Hf_partial_calcs[0])
+        Hf_true2_beef = weight2*(Hrxns[1] - Hf_partial_calcs[1])
+        
+        weighted_Hrxn_true = {'beef_vdw': np.round(np.abs(Hrxns[0])*weight1 + np.abs(Hrxns[1])*weight2, 8),
+                          'ref': np.round(np.abs(Hf_partial_calcs[0])*weight_ref1 + np.abs(Hf_partial_calcs[1])*weight_ref2, 8)}
+        weighted_Hrxn = {k:np.round(v, 8) for k, v in weighted_Hrxn.items()}
+        
+        weighted_Hf_true = {'beef_vdw':np.round(Hf_true1_beef + Hf_true2_beef, 8),
+                            'ref': 0.0}
+        weighted_Hf = {k:np.round(v, 8) for k, v in weighted_Hf.items()}
+        assert weighted_Hrxn_true == weighted_Hrxn and weighted_Hf == weighted_Hf_true
+
+
 class TestChooseBestMethod:
 
     ranking_file = 'tests/dummy_data/rankings.yaml'
@@ -370,26 +428,40 @@ class TestChooseBestMethod:
         assert true_hrxn == 1. and true_hf == 2. and (true_label == 'test//ATcT+exp' or true_label == 'test//exp+ATcT')
 
 class TestDecomposeRxn:
-    # ranking_file = 'tests/dummy_data/rankings.yaml'
-    # methods_keys_file = 'tests/dummy_data/methods_keys.yaml'
-    # c = calcCBH(dataframe_path='tests/dummy_data/adsorbate_data.pkl', 
-    #             rankings_path=ranking_file, 
-    #             method_keys_path=methods_keys_file)
+    # TODO: need to do tests for larger datasets
+    ranking_file = 'tests/dummy_data/rankings.yaml'
+    methods_keys_file = 'tests/dummy_data/methods_keys.yaml'
+    c = calcCBH(dataframe_path='tests/dummy_data/adsorbate_data.pkl', 
+                rankings_path=ranking_file, 
+                method_keys_path=methods_keys_file)
     
-    # smiles = 'COCO.[Pt]'
-    # cbh = buildCBH(smiles=smiles, saturate=1, allow_overshoot=False, ignore_F2=True, surface_smiles='[Pt]')
-    # c.rxns[smiles] = {}
-    # c.error_messages[smiles] = []
+    smiles = 'COCO.[Pt]'
+    cbh = buildCBH(smiles=smiles, saturate=1, allow_overshoot=False, ignore_F2=True, surface_smiles='[Pt]')
+    c.rxns[smiles] = {}
+    c.error_messages[smiles] = []
     
-    # def test_nan_energies_in_precursor_df_rct(self):
-    #     delete_smiles = list(self.cbh.cbh_rcts[1].keys())[0]
-    #     self.c.energies.loc[delete_smiles, ['beef_vdw_E0', 'beef_vdw_zpe']] = nan
-    #     all_precursors = list(self.cbh.cbh_rcts[1].keys()) + list(self.cbh.cbh_pdts[1].keys())
-    #     species_null = self.c.energies.loc[all_precursors, self.c.methods_keys].isna().all(axis=1)
+    def test_partial_nan_energies_in_precursor_df_rct(self):
+        delete_smiles = 'O.[Pt]'
+        self.c.energies.loc[delete_smiles, ['beef_vdw_E0']] = nan
         
-    #     rung = self.c._decompose_rxn(s=self.smiles, test_rung=1, cbh_rcts=self.cbh.cbh_rcts, cbh_pdts=self.cbh.cbh_pdts, label='H')
-    #     assert rung == '1'
-    pass
+        rung = self.c._decompose_rxn(s=self.smiles, test_rung=1, cbh_rcts=self.cbh.cbh_rcts, cbh_pdts=self.cbh.cbh_pdts, label='H')
+        check_rxn = add_dicts(self.cbh.cbh_pdts[1], {k : -v for k, v in self.cbh.cbh_rcts[1].items()})
+        assert rung == '1' and self.c.rxns[self.smiles]['H'] == check_rxn
+
+    def test_all_nan_energies_in_precursor_df_rct(self):
+        delete_smiles = 'O.[Pt]'
+        self.c.energies.loc[delete_smiles, ['beef_vdw_E0', 'beef_vdw_zpe']] = nan
+        
+        rung = self.c._decompose_rxn(s=self.smiles, test_rung=1, cbh_rcts=self.cbh.cbh_rcts, cbh_pdts=self.cbh.cbh_pdts, label='H')
+        check_rxn = add_dicts(self.cbh.cbh_pdts[1], {k : -v for k, v in self.cbh.cbh_rcts[1].items()})
+        assert rung == '1' and self.c.rxns[self.smiles]['H'] == check_rxn
+
+    def test_missing_species_in_dataframe(self):
+        delete_smiles = 'O.[Pt]'
+        self.c.energies.drop(delete_smiles, inplace=True)
+        
+        rung = self.c._decompose_rxn(s=self.smiles, test_rung=1, cbh_rcts=self.cbh.cbh_rcts, cbh_pdts=self.cbh.cbh_pdts, label='H')
+        assert rung == '1' and self.c.rxns[self.smiles]['H'] == {}
 
 
 class TestCheckRungEquivalency:

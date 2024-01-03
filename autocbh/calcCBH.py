@@ -348,9 +348,7 @@ class calcCBH:
             self.energies.loc[s, 'DfH'] = final_Hf
             self.energies.loc[s, 'DrxnH'] = final_Hrxn
             self.energies.loc[s, 'source'] = label
-
-        Hf = {}
-        Hrxn = {}
+        
         # sort by the max distance between two atoms in a molecule
         def simple_sort(x):
             """Sorting algorithm used for smallest to largest
@@ -379,7 +377,7 @@ class calcCBH:
                     alt_rxns = self._check_alt_rxn_usability(s, alt_rxn_keys)
                     if alt_rxns:
                         labels = [str(alt_rank)+'-alt' for alt_rank in alt_rxns.keys()]
-                        Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
+                        Hrxn, Hf = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
 
                         # Choose the best possible method to assign to the energies dataframe
                         if len(alt_rxns) == 1:
@@ -393,7 +391,7 @@ class calcCBH:
                                 if i == len(alt_rxns) - 1:
                                     label += ')'
                                 
-                        choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+                        choose_best_method_and_assign(Hrxn, Hf, label)
 
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
@@ -425,14 +423,14 @@ class calcCBH:
                         # user rung is better than automated rungs
                         if best_alt > int(cbhs_rungs[0].split(':')[-1]):
                             labels = [str(alt_rank)+'-alt' for alt_rank in alt_rxns.keys()]
-                            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
+                            Hrxn, Hf = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
                             # Choose the best possible method to assign to the energies dataframe
                             label = f'CBH-{best_alt}-alt'
                         
                         # EQUAL user and automated rungs 
                         elif best_alt == int(cbhs_rungs[0].split(':')[-1]):
                             labels = [str(alt_rank)+'-alt' for alt_rank in alt_rxns.keys()] + s_syms
-                            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
+                            Hrxn, Hf = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
 
                             # Choose the best possible method to assign to the energies dataframe
                             label = f'CBHavg-('
@@ -455,9 +453,9 @@ class calcCBH:
                                     if i == len(s_syms)-1:
                                         label += ')'
                             
-                            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, s_syms, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
+                            Hrxn, Hf = self._weighting_scheme_Hf(s, s_syms, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
                         
-                        choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+                        choose_best_method_and_assign(Hrxn, Hf, label)
 
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
@@ -541,8 +539,8 @@ class calcCBH:
                                     if i == len(s_syms)-1:
                                         label += ')'
 
-                        Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
-                        choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+                        Hrxn, Hf = self._weighting_scheme_Hf(s, labels, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
+                        choose_best_method_and_assign(Hrxn, Hf, label)
                         if len(self.error_messages[s]) == 0:
                             del self.error_messages[s]
                         continue
@@ -559,9 +557,9 @@ class calcCBH:
             # prioritize reactions by total coefficients or by rung number
             if priority in ("abs_coeff", "rel_coeff"):
                 if priority == "rel_coeff":
-                    cbh_totalcoeff = {i : -1 + sum(self.rxns[s][sat].values()) for i, sat in enumerate(saturate_syms)}
+                    cbh_totalcoeff = {i : (-1 + sum(self.rxns[s][sat].values()) if isinstance(self.rxns[s][sat], dict) and self.rxns[s][sat] else np.inf) for i, sat in enumerate(saturate_syms)}
                 elif priority == "abs_coeff":
-                    cbh_totalcoeff = {i : 1 + sum(map(abs, self.rxns[s][sat].values())) for i, sat in enumerate(saturate_syms)}
+                    cbh_totalcoeff = {i : (1 + sum(map(abs, self.rxns[s][sat].values())) if isinstance(self.rxns[s][sat], dict) and self.rxns[s][sat] else np.inf) for i, sat in enumerate(saturate_syms)}
                 mn = min(cbh_totalcoeff.values())
                 idx = [i for i, v in cbh_totalcoeff.items() if v == mn]
             else:
@@ -582,13 +580,13 @@ class calcCBH:
                     if i == len(s_syms)-1:
                         label += ')'
             
-            Hrxn[s], Hf[s] = self._weighting_scheme_Hf(s, s_syms, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
+            Hrxn, Hf = self._weighting_scheme_Hf(s, s_syms, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
             
             if len(self.error_messages[s]) == 0:
                 del self.error_messages[s]
 
             # Choose the best possible method to assign to the energies dataframe
-            choose_best_method_and_assign(Hrxn[s], Hf[s], label)
+            choose_best_method_and_assign(Hrxn, Hf, label)
 
         if len(self.error_messages.keys()) != 0:
             print(f'Process completed with errors in {len(self.error_messages.keys())} species')
@@ -723,7 +721,7 @@ class calcCBH:
 
         return Hrxn, Hf
     
-    def _weighting_scheme_Hf(self, s, labels, skip_precursor_check=False, hrxn_fcns:dict={}) -> dict:
+    def _weighting_scheme_Hf(self, s:str, labels:list, skip_precursor_check:bool=False, hrxn_fcns:dict={}) -> dict:
         """
         Weighting scheme the Hf values for each level of theory given
         a list of CBH.buildCBH objects or a dictionary containing 
@@ -767,19 +765,25 @@ class calcCBH:
         # if only one saturation
         if len(self.rxns[s]) == 1:
             rxn = copy(self.rxns[s][labels[0]])
-            rxn.update({s:-1})
-            weighted_Hrxn, weighted_Hf = self.Hf(s, rxn, skip_precursor_check=skip_precursor_check, hrxn_fcns=hrxn_fcns)
-            weighted_Hrxn = {k: abs(v) for k, v in weighted_Hrxn.items()}
+            if rxn is None or rxn == {}:
+                return {'ref':nan}, {'ref':nan}
+            else:
+                rxn.update({s:-1})
+                weighted_Hrxn, weighted_Hf = self.Hf(s, rxn, skip_precursor_check=skip_precursor_check, hrxn_fcns=hrxn_fcns)
+                weighted_Hrxn = {k: abs(v) for k, v in weighted_Hrxn.items()}
         # Weight multiple reactions
         else:
+            if all([True if v is None or v == {} else False for v in self.rxns[s].values()]):
+                return {'ref':nan}, {'ref':nan}
             Hrxn_ls = []
             Hf_ls = []
             for label in labels:
                 rxn = copy(self.rxns[s][label])
-                rxn.update({s:-1})
-                Hrxn_s, Hf_s = self.Hf(s, rxn, skip_precursor_check=skip_precursor_check, hrxn_fcns=hrxn_fcns)
-                Hrxn_ls.append(Hrxn_s)
-                Hf_ls.append(Hf_s)
+                if rxn != {} and rxn is not None:
+                    rxn.update({s:-1})
+                    Hrxn_s, Hf_s = self.Hf(s, rxn, skip_precursor_check=skip_precursor_check, hrxn_fcns=hrxn_fcns)
+                    Hrxn_ls.append(Hrxn_s)
+                    Hf_ls.append(Hf_s)
 
             weights = {}
             for k in Hrxn_ls[0]:
@@ -1179,7 +1183,7 @@ class calcCBH:
         coeffs = []
         rxns = []
         rungs_str = []
-        # extra_messages = {}
+        extra_messages = {}
 
         rungs = list(reversed(range(test_rung+1)))
         for rung in rungs:
@@ -1190,45 +1194,30 @@ class calcCBH:
             try:
                 sources = self.energies.loc[all_precursors, 'source'].values.tolist()
 
-                # ##
-                # species_null = [1]*len(self.methods) # pre-allocate
-                # species_null_ls = []
-                # for i, (_, keys) in enumerate(self.methods_keys_dict.items()):
-                #     sp_null = self.energies.loc[all_precursors, keys].isna().any(axis=1)
-                #     for precur in sp_null.index[sp_null.values]:
-                #         species_null_ls.append(precur)
-                #     species_null[i] = any(sp_null.values)
-                    
-                # if all(species_null):
-                #     test_rung -= 1
-                #     # error message
-                #     missing_precursors = ''
-                #     for precursors in set(species_null_ls):
-                #         missing_precursors += '\n\t   '+precursors
-                #     self.error_messages[s].append(f"CBH-{test_rung+1}-{label} precursor(s) do not have necessary calculations in database: {missing_precursors}")
-                #     if test_rung >= 0:
-                #         self.error_messages[s][-1] += f'\n\t Rung will move down to {test_rung}.'
-                #     coeffs.append(np.inf)
-                #     rxns.append(None)
-                #     rungs_str.append('')
-                #     extra_messages[rung] = f'Missing energies'
-                #     continue
-                # ##
-
-                # if all values contributing to the energy of a precursor are NaN move down a rung
-                species_null = self.energies.loc[all_precursors, self.methods_keys].isna().all(axis=1)
-                if True in species_null.values:
+                # check if any of the energies for a given method are missing from all of the participating molecules
+                species_null = [1]*len(self.methods) # pre-allocate
+                species_null_ls = []
+                for i, (_, keys) in enumerate(self.methods_keys_dict.items()):
+                    sp_null = self.energies.loc[all_precursors, keys].isna().any(axis=1)
+                    for precur in sp_null.index[sp_null.values]:
+                        species_null_ls.append(precur)
+                    species_null[i] = any(sp_null.values)
+                
+                # if all of the methods are missing at least one necessary energy, move down a rung
+                if all(species_null):
                     test_rung -= 1
                     # error message
                     missing_precursors = ''
-                    for precursors in species_null.index[species_null.values]:
+                    for precursors in set(species_null_ls):
                         missing_precursors += '\n\t   '+precursors
-                    self.error_messages[s].append(f"CBH-{test_rung+1}-{label} precursor(s) do not have any calculations in database: {missing_precursors}")
+                    self.error_messages[s].append(f"CBH-{test_rung+1}-{label} precursor(s) do not have necessary energy calculations in database: {missing_precursors}")
                     if test_rung >= 0:
                         self.error_messages[s][-1] += f'\n\t Rung will move down to {test_rung}.'
                     coeffs.append(np.inf)
-                    rxns.append(None)
+                    rxn = add_dicts(cbh_pdts[rung], {k : -v for k, v in cbh_rcts[rung].items()})
+                    rxns.append(rxn) # changed from .append(None)
                     rungs_str.append('')
+                    extra_messages[rung] = f'Missing energies'
                     continue
             
             # triggers when a precursor in the CBH scheme does not appear in the database
@@ -1241,7 +1230,7 @@ class calcCBH:
                     if precursors not in self.energies.index:
                         missing_precursors += '\n\t   '+precursors
 
-                self.error_messages[s].append(f"CBH-{test_rung+1}-{label} has missing reactant(s): {missing_precursors}")
+                self.error_messages[s].append(f"CBH-{test_rung+1}-{label} has missing precursor(s) in the energies dataframe: {missing_precursors}")
                 if test_rung >=0:
                     self.error_messages[s][-1] += f'\n\tRung will move down to CBH-{test_rung}-{label}.'
                 else:
@@ -1250,9 +1239,9 @@ class calcCBH:
                     self.error_messages[s][-1] += f'\n\tCRITICAL ERROR: Check for SMILES typos, errors in input DataFrame, and reconsider'
                     self.error_messages[s][-1] += f'\n\t'+' '*16+'whether this species is necessary for future computations.'
                 coeffs.append(np.inf)
-                rxns.append(None)
+                rxns.append({})
                 rungs_str.append('')
-                # extra_messages[rung] = f'Missing precursor'
+                extra_messages[rung] = f'Missing precursor'
                 continue
 
             # 2. check sources of target and all reactants
@@ -1286,9 +1275,10 @@ class calcCBH:
                 # This will appropriately trigger for overshooting cases
                 test_rung -= 1
                 coeffs.append(np.inf)
-                rxns.append(None)
+                rxn = add_dicts(cbh_pdts[rung], {k : -v for k, v in cbh_rcts[rung].items()})
+                rxns.append(rxn) # changed from .append(None)
                 rungs_str.append('')
-                # extra_messages[rung] = f'Missing Hf'
+                extra_messages[rung] = f'Missing Hf'
                 continue
             
             # reaction dictionary
@@ -1309,8 +1299,8 @@ class calcCBH:
                     # indices where theory is worse than rank
                     worse_idxs = np.where(np.array([self.rankings_rev[s] for s in named_sources]) >= rank)[0]
                     decompose_precurs = [list(rxn.keys())[i] for i in worse_idxs] # precursors where the theory is worse than rank and must be decomposed
-                    # dictionaries holding a precursor's respective rung rung or saturation atom
 
+                    # dictionaries holding a precursor's respective rung rung or saturation atom
                     d_rung = {}
                     d_sat = {}
                     for i, precur in enumerate(list(rxn.keys())):
@@ -1416,6 +1406,7 @@ class calcCBH:
                 coeffs.append(np.inf)
                 rxns.append(None)
                 rungs_str.append('')
+                extra_messages[rung] = 'Equivalent rung'
                 continue
             rxns.append(rxn)
             coeffs.append(sum(abs(np.array(list(rxn.values())))))
@@ -1431,26 +1422,35 @@ class calcCBH:
         else:
             ind = np.where(coeffs < coeffs[0])[0][0]
 
-        self.rxns[s][label] = rxns[ind]
         rung = rungs_str[ind]
-        ## 
-        # should also probably check if the other ones also have rung == ''
-        # if rung == '':
-        #     self.error_messages[s].append(f'Add something')
-        #     for r in rungs:
-        #         if r in extra_messages:
-        #             if extra_messages[r] in (f'Missing energies', f'Missing Hf'):
-        #                 rung = str(r)
-        #                 ind = np.where(np.array(rungs)==r)[0][0]
-        #                 break
-                    # elif not true
-            # else it finishes but doesnt break
-        ##
+        # assumes that if rung != '', then it is a valid rung
+        # maybe makes more sense to choose the lowest one
+        if rung == '':
+            for r in rungs:
+                if r in extra_messages:
+                    if extra_messages[r] in (f'Missing energies', f'Missing Hf'):
+                        rung = str(r)
+                        ind = np.where(np.array(rungs)==r)[0][0]
+                        self.error_messages[s].append(f'Missing energies or DfH values in dataframe so calculations may result in NaN values.')
+                        break
+                    # elif equivalent rung --> should not occur
+            else:
+                # else it doesnt break
+                if 'Missing precursor' in extra_messages.values():
+                    for r in rungs: 
+                        if r in extra_messages:
+                            if extra_messages[r] == 'Missing precursor':
+                                rung = str(r)
+                                ind = np.where(np.array(rungs)==r)[0][0]
+                                self.error_messages[s].append(f'Missing precursor so calculations may result in NaN values.')
+                                break
+
         if ':' in rung or float(rung) != test_rung:
-            self.error_messages[s].append(f'This species was decomposed from CBH-{test_rung}-{label} to be made up of species from CBH-{label}: {float(rung) if ":" not in rung else rung.split(":")}')
-            self.error_messages[s][-1] += f'\n\tBeware that the logged rungs may not be fully representative. \n\tThey are drawn only from comparing reference species to this specific saturation scheme.'
-            self.error_messages[s][-1] += f'\n\tIt is possible that the decomposed reaction contains higher or lower rungs from other saturation schemes.\n\tCheck self.rxns attribute for accurate representation.'
-        
+            if test_rung >= 0:
+                self.error_messages[s].append(f'This species was decomposed from CBH-{test_rung}-{label} to be made up of species from CBH-{label}: {int(rung) if ":" not in rung else rung.split(":")}')
+                self.error_messages[s][-1] += f'\n\tBeware that the logged rungs may not be fully representative. \n\tThey are drawn only from comparing reference species to this specific saturation scheme.'
+                self.error_messages[s][-1] += f'\n\tIt is possible that the decomposed reaction contains higher or lower rungs from other saturation schemes.\n\tCheck self.rxns attribute for accurate representation.'
+        self.rxns[s][label] = rxns[ind] # moved from above new if statement
         return rung
 
 
