@@ -1,6 +1,6 @@
 from rdkit import Chem
 from rdkit.Chem.Descriptors import NumRadicalElectrons
-import igraph
+from igraph import Graph
 import numpy as np
 from collections import defaultdict
 
@@ -653,7 +653,7 @@ def mol2graph(mol):
     atom_attributes = [(a.GetIdx(), a.GetAtomicNum(), a.GetSymbol(), a.GetNumRadicalElectrons()) for a in mol.GetAtoms()]
     bond_attributes = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx(), b.GetBondType(), b.GetBondTypeAsDouble()) for b in mol.GetBonds()]
     # generate chemical graph
-    g = igraph.Graph()
+    g = Graph()
     # Create vertices for each Atom
     for a_attr in atom_attributes:
         g.add_vertex(a_attr[0], AtomicNum=a_attr[1], AtomicSymbol=a_attr[2], NumRad=a_attr[3])

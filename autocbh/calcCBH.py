@@ -34,6 +34,10 @@ class calcCBH:
                             levels of theory. {rank # : list(methods)}
     :error_messages:    [dict] Dictionary holding logged error messages.
                             Use calcCBH.print_errors() method.
+    :rxns:              [dict] Nested dictionary holding reaction schemes 
+                            used for Hf calculations. 
+                            {SMILES : {sat : {rxn dict}}}
+    :energies:          [pd.DataFrame] Holds all energies and Hf data.
 
     METHODS
     -------
