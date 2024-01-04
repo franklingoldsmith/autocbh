@@ -7,19 +7,31 @@ An in-depth description of the package can be found in this [Master's Thesis](ht
 * Bjarne Kreitz, Kento Abeywardane, and C. Franklin Goldsmith. **Linking Experimental and _Ab Initio_ Thermochemistry of Adsorbates with a Generalized Thermochemical Hierarchy.** Journal of Chemical Theory and Computation. 2023. 19 (13), 4149-4162. DOI: [10.1021/acs.jctc.3c00112](https://doi.org/10.1021/acs.jctc.3c00112)
 
 ## Installation
-### Environment Setup
-Commands to setup Python environment
-#### RDKit 2022.03.5
+### 1. Clone repo
+Clone the repository and move into the autoCBH directory.
+
+### 2. Setup and activate environment
+Setup the python environment then activate it with the following command.
+
+```
+conda env create -f environment.yml
+conda activate autoCBH
+```
+Note, this defaults to RDKit 2022.09 where the $\texttt{CanonSmiles}$ algorithm changed from RDKit 2022.03.5. 
+
+\[OPTIONAL\] To adjust RDKit version, either edit the ```environment.yml``` file to this version. Alternatively, use the following command:
+
 ```
 conda create -n autocbh python=3.9 numpy=1.23 pandas=1.4 rdkit=2022.03.5 python-igraph=0.9.11 pygraphviz=1.9 networkx notebook matplotlib pytest tqdm pyyaml -c defaults -c conda-forge -c anaconda
 ```
 
-#### RDKit 2022.09 (changes to $\texttt{CanonSmiles}$ algorithm)
+### 3. Perform a developer install
+Perform a developer install once inside the autoCBH directory.
 ```
-conda create -n autocbh python=3.9 numpy=1.23 pandas=1.4 rdkit=2022.09 python-igraph=0.9.11 pygraphviz=1.9 networkx notebook matplotlib pytest tqdm pyyaml -c defaults -c conda-forge -c anaconda
+cd autoCBH
+python -m pip install -e .
 ```
-### Installation of package
-TBA
+
 
 ## Features
 ### 1. Automated CBH scheme generation
