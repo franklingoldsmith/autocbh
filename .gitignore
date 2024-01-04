@@ -1,13 +1,10 @@
 .DS_Store
 autocbh/data/molecule_data/
 *.pkl
-!./autocbh/data/pfas_energies.pkl
 .vscode/
 *.svg
 # *.png
 *.ai
-*.ipynb
-!examples/autoCBH\ Tutorial.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
