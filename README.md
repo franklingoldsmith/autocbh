@@ -22,17 +22,17 @@ conda create -n testautocbh python=3.9 numpy=1.23 pandas=1.4 rdkit=2022.09 pytho
 TBA
 
 ## Features
-#### 1. Automated CBH scheme generation
+### 1. Automated CBH scheme generation
 ![GenX CBH-2](figures/CBHscheme_ex.png)
 
-#### 2. Automated calculation of heats of formation across multiple levels of theory
+### 2. Automated calculation of heats of formation across multiple levels of theory
 ![Example output dataframe](figures/output_dataframe_example.png)
 
-#### 3. Error logging during calculation
+### 3. Error logging during calculation
 ![Error logging](figures/print_errors.png)
 
-#### 4. Thermochemical network visualization
+### 4. Thermochemical network visualization
 ![PFOA TN](figures/TN_PFOA_H.png)
 
-#### 5. Uncertainty propagation quantification
+### 5. Uncertainty propagation quantification
 ![UQ](figures/UQ_genx_rel.png)
