@@ -39,6 +39,6 @@ TBA
 
 
 ## Copyright
-© 2022 Goldsmith Group for Chemical Kinetics at Brown University 
+© 2022, Goldsmith Group for Chemical Kinetics, Brown University 
 ## Acknowledgements
 Author: Kento Abeywardane
