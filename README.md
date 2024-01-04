@@ -36,3 +36,9 @@ TBA
 
 ### 5. Uncertainty propagation quantification
 ![UQ](figures/UQ_genx_rel.png)
+
+
+## Copyright
+© 2022 Goldsmith Group for Chemical Kinetics at Brown University 
+## Acknowledgements
+Author: Kento Abeywardane
