@@ -1,15 +1,15 @@
 import numpy as np
 from rdkit import Chem
-import CBH
+import autocbh.CBH as CBH
 import networkx as nx
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_agraph import graphviz_layout
 from matplotlib import colors
 import sys
-sys.path.append('.')
+# sys.path.append('.')
 import os
 import yaml
-import calcCBH
+import autocbh.calcCBH as calcCBH
 
 class thermochemical_network:
 

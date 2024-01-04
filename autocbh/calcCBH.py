@@ -1,7 +1,7 @@
 # import CBH
 import sys
-sys.path.append('.')
-sys.path.append('..')
+# sys.path.append('.')
+# sys.path.append('..')
 import autocbh.CBH as CBH
 from autocbh.CBH import add_dicts
 import numpy as np
