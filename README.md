@@ -20,7 +20,7 @@ TBA
 
 ## Features
 #### 1. Automated CBH scheme generation
-![GenX CBH-2](figures/genx_cbh2.png)
+![GenX CBH-2](figures/CBHscheme_ex.png)
 
 #### 2. Automated calculation of heats of formation across multiple levels of theory
 ![Example output dataframe](figures/output_dataframe_example.png)
