@@ -54,3 +54,5 @@ python -m pip install -e .
 © 2022, Goldsmith Group for Chemical Kinetics, Brown University 
 ## Acknowledgements
 Author: Kento Abeywardane
+
+Setup configuration and TOML files using [MolSSI cookiecutter](https://github.com/molssi/cookiecutter-cms)
