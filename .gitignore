@@ -9,8 +9,9 @@ data/molecule_data/
 *.ai
 
 *.ipynb
-!*autoCBH\ Tutorial.ipynb
+!examples/autoCBH\ Tutorial.ipynb
 !examples/Thesis\ plots.ipynb
+!examples/Visualize\ CBH.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
