@@ -1,5 +1,5 @@
 .DS_Store
-autocbh/data/molecule_data/
+data/molecule_data/
 *.pkl
 !data/pfas_energies.pkl
 !data/adsorbate_data.pkl
