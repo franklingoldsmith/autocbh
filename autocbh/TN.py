@@ -5,8 +5,6 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_agraph import graphviz_layout
 from matplotlib import colors
-import sys
-# sys.path.append('.')
 import os
 import yaml
 import autocbh.calcCBH as calcCBH

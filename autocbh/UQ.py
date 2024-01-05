@@ -2,8 +2,6 @@ import numpy as np
 from autocbh.calcCBH import calcCBH
 import autocbh.CBH as CBH
 import os, sys
-# sys.path.append('.')
-# sys.path.append('..')
 from rdkit.Chem import MolFromSmiles, AddHs
 from copy import copy
 from tqdm import tqdm
