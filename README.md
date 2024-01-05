@@ -3,7 +3,8 @@ Automated generation of Connectivity-Based Hierarchies (CBH) for selected molecu
 
 ![General CBH schematic](figures/CBH_schematic.png#center)
 
-An in-depth description of the package can be found in this [Master's Thesis](https://repository.library.brown.edu/studio/item/bdr:t638etqc/) and was also used in the following publications:
+A tutorial for the most useful features is provided in the ```examples/autoCBH Tutorial.ipynb``` notebook.
+A more in-depth description of the package can be found in this [Master's Thesis](https://repository.library.brown.edu/studio/item/bdr:t638etqc/). This package was used used in the following publications:
 * Bjarne Kreitz, Kento Abeywardane, and C. Franklin Goldsmith. **Linking Experimental and _Ab Initio_ Thermochemistry of Adsorbates with a Generalized Thermochemical Hierarchy.** Journal of Chemical Theory and Computation. 2023. 19 (13), 4149-4162. DOI: [10.1021/acs.jctc.3c00112](https://doi.org/10.1021/acs.jctc.3c00112)
 
 ## Installation
