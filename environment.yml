@@ -1,4 +1,4 @@
-name: autoCBH
+name: autocbh
 channels:
   - anaconda
   - conda-forge

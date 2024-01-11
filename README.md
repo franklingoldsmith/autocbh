@@ -16,7 +16,7 @@ Setup the python environment then activate it with the following command.
 
 ```
 conda env create -f environment.yml
-conda activate autoCBH
+conda activate autocbh
 ```
 Note, this defaults to RDKit 2022.09 where the $\texttt{CanonSmiles}$ algorithm changed from RDKit 2022.03.5. 
 
@@ -31,6 +31,32 @@ Perform a developer install once inside the autoCBH directory.
 ```
 cd autoCBH
 python -m pip install -e .
+```
+
+## File Structure
+```
+.
+├── autocbh/                        # autoCBH module
+│   ├── data/                       # data processing module
+│   │   └── molData.py              # data handling file
+│   ├── calcCBH.py                  # calculation of heats of formation
+│   │   └── calcCBH                 # hierarchical calculation of HoF
+│   ├── CBH.py                      # CBH schema generation
+│   │   └── buildCBH                # driver for generation of CBH schema
+│   ├── hrxnHelpers.py              # customizable funcs for QM-specific Hrxn calc
+│   ├── TN.py                       # thermochemical network generation
+│   │   └── thermochemical_network  # driver for TN generation and visualization
+│   └── UQ.py                       # uncertainty quantification/propagation
+│       └── uncertainty_quantification # driver for UQ (vectorized)
+├── data/                           # raw data and configuration files
+│   ├── *.pkl                       # default raw data (QM and experimental)
+│   ├── methods_keys.yaml           # dictionary for QM method names
+│   ├── rankings.yaml               # rankings of accuracy of QM methods
+│   ├── alternative_rxn.yaml        # custom reaction schemes
+│   └── alias.yaml                  # custom names for SMILES strings
+├── examples/                       # ipynb examples / tutorials
+│   └── autoCBH Tutorial.ipynb      # walkthrough of autoCBH features
+└── tests/                          # tests for pytest
 ```
 
 
@@ -53,6 +79,7 @@ python -m pip install -e .
 
 ## Acknowledgements and Copyright
 Copyright (c) 2022, [Goldsmith Group for Chemical Kinetics](https://www.brown.edu/Departments/Engineering/Labs/Goldsmith/index.html), [Brown University](https://engineering.brown.edu/)
+
 Author: Kento Abeywardane
 
 Setup configuration and TOML files using [MolSSI cookiecutter](https://github.com/molssi/cookiecutter-cms)
