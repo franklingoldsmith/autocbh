@@ -51,9 +51,8 @@ python -m pip install -e .
 ![UQ](figures/UQ_genx_rel.png)
 
 
-## Copyright
-© 2022, Goldsmith Group for Chemical Kinetics, Brown University 
-## Acknowledgements
+## Acknowledgements and Copyright
+Copyright (c) 2022, [Goldsmith Group for Chemical Kinetics](https://www.brown.edu/Departments/Engineering/Labs/Goldsmith/index.html), [Brown University](https://engineering.brown.edu/)
 Author: Kento Abeywardane
 
 Setup configuration and TOML files using [MolSSI cookiecutter](https://github.com/molssi/cookiecutter-cms)
