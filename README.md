@@ -37,17 +37,17 @@ python -m pip install -e .
 ```
 .
 ├── autocbh/                        # autoCBH module
-│   ├── data/                       # data processing module
-│   │   └── molData.py              # data handling file
-│   ├── calcCBH.py                  # calculation of heats of formation
-│   │   └── calcCBH                 # hierarchical calculation of HoF
+│   ├── data/                       
+│   │   └── molData.py              # data processing/handling file
+│   ├── calcCBH.py                  # hierarchical calculation of HoF
+│   │   └── calcCBH                 
 │   ├── CBH.py                      # CBH schema generation
-│   │   └── buildCBH                # driver for generation of CBH schema
+│   │   └── buildCBH                
 │   ├── hrxnHelpers.py              # customizable funcs for QM-specific Hrxn calc
 │   ├── TN.py                       # thermochemical network generation
-│   │   └── thermochemical_network  # driver for TN generation and visualization
+│   │   └── thermochemical_network
 │   └── UQ.py                       # uncertainty quantification/propagation
-│       └── uncertainty_quantification # driver for UQ (vectorized)
+│       └── uncertainty_quantification 
 ├── data/                           # raw data and configuration files
 │   ├── *.pkl                       # default raw data (QM and experimental)
 │   ├── methods_keys.yaml           # dictionary for QM method names
@@ -55,7 +55,7 @@ python -m pip install -e .
 │   ├── alternative_rxn.yaml        # custom reaction schemes
 │   └── alias.yaml                  # custom names for SMILES strings
 ├── examples/                       # ipynb examples / tutorials
-│   └── autoCBH Tutorial.ipynb      # walkthrough of autoCBH features
+│   └── autoCBH Tutorial.ipynb      
 └── tests/                          # tests for pytest
 ```
 
