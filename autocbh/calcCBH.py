@@ -198,7 +198,8 @@ class calcCBH:
         if zero_out_heats:
             # zero out heats of formation for species without experimental heats of formation
             # zero out heats of reaction for all species
-            non_exp_species = [s for s in self.energies.index.values if (type(self.energies.loc[s, 'source']) is not str and isnan(self.energies.loc[s, 'source'])) or self.rankings_rev[self.energies.loc[s, 'source']] != 1]
+            non_exp_species = [s for s in self.energies.index.values 
+                               if (type(self.energies.loc[s, 'source']) is not str and isnan(self.energies.loc[s, 'source'])) or self.rankings_rev[self.energies.loc[s, 'source']] != 1]
             self.energies.loc[non_exp_species, ['DfH']] = 0.0
             self.energies.loc[:, ['DrxnH']] = 0.0
 
@@ -558,9 +559,15 @@ class calcCBH:
             # prioritize reactions by total coefficients or by rung number
             if priority in ("abs_coeff", "rel_coeff"):
                 if priority == "rel_coeff":
-                    cbh_totalcoeff = {i : (-1 + sum(self.rxns[s][sat].values()) if isinstance(self.rxns[s][sat], dict) and self.rxns[s][sat] else np.inf) for i, sat in enumerate(saturate_syms)}
+                    cbh_totalcoeff = {i : (-1 + sum(self.rxns[s][sat].values()) 
+                                           if isinstance(self.rxns[s][sat], dict) and self.rxns[s][sat] 
+                                           else np.inf) 
+                                            for i, sat in enumerate(saturate_syms)}
                 elif priority == "abs_coeff":
-                    cbh_totalcoeff = {i : (1 + sum(map(abs, self.rxns[s][sat].values())) if isinstance(self.rxns[s][sat], dict) and self.rxns[s][sat] else np.inf) for i, sat in enumerate(saturate_syms)}
+                    cbh_totalcoeff = {i : (1 + sum(map(abs, self.rxns[s][sat].values())) 
+                                           if isinstance(self.rxns[s][sat], dict) and self.rxns[s][sat] 
+                                           else np.inf) 
+                                            for i, sat in enumerate(saturate_syms)}
                 mn = min(cbh_totalcoeff.values())
                 idx = [i for i, v in cbh_totalcoeff.items() if v == mn]
             else:
@@ -858,12 +865,16 @@ class calcCBH:
                 if 'avg' in source_str.split('//')[0]:
                     # ex. CBHavg-(#-S, #-S, #-alt)
                     # if combination of rungs like CBHavg-(#:#-S, ...) choose the lower rung
-                    rungs += [float(sub.split('-')[0]) if ':' not in sub else float(sub.split('-')[0].split(':')[0]) for sub in source_str.split('//')[0][8:-1].split(', ')]
+                    rungs += [float(sub.split('-')[0]) 
+                              if ':' not in sub else float(sub.split('-')[0].split(':')[0]) 
+                              for sub in source_str.split('//')[0][8:-1].split(', ')]
                     sats += [sub.split('-')[1] for sub in source_str.split('//')[0][8:-1].split(', ')]
                 else:
                     # ex. CBH-#-S
                     # if combination of rungs like CBH-#:#-S choose the lower rung
-                    rungs += [float(source_str.split('//')[0].split('-')[1]) if ':' not in source_str else float(source_str.split('//')[0].split('-')[1].split(':')[0])]
+                    rungs += [float(source_str.split('//')[0].split('-')[1]) 
+                              if ':' not in source_str 
+                              else float(source_str.split('//')[0].split('-')[1].split(':')[0])]
                     sats += [source_str.split('//')[0].split('-')[2]]
                 
                 methods = source_str.split('//')[1].split('+')
@@ -1308,11 +1319,16 @@ class calcCBH:
                         if len(rxn_sources[i].split('//')) > 1:
                             if 'avg' in rxn_sources[i].split('//')[0]:
                                 # ex. CBHavg-(N-S, N-S, N-alt)
-                                d_rung[precur] = [float(sub.split('-')[0]) if ':' not in sub.split('-')[0] else float(sub.split('-')[0].split(':')[0]) for sub in rxn_sources[i].split('//')[0][8:-1].split(', ')]
+                                d_rung[precur] = [float(sub.split('-')[0]) 
+                                                  if ':' not in sub.split('-')[0] 
+                                                  else float(sub.split('-')[0].split(':')[0]) 
+                                                  for sub in rxn_sources[i].split('//')[0][8:-1].split(', ')]
                                 d_sat[precur] = [sub.split('-')[1] for sub in rxn_sources[i].split('//')[0][8:-1].split(', ')]
                             else:
                                 # ex. CBH-N-S
-                                d_rung[precur] = [float(rxn_sources[i].split('//')[0].split('-')[1]) if ':' not in rxn_sources[i] else float(rxn_sources[i].split('//')[0].split('-')[1].split(':')[0])]
+                                d_rung[precur] = [float(rxn_sources[i].split('//')[0].split('-')[1]) 
+                                                  if ':' not in rxn_sources[i] 
+                                                  else float(rxn_sources[i].split('//')[0].split('-')[1].split(':')[0])]
                                 d_sat[precur] = [rxn_sources[i].split('//')[0].split('-')[2]]
                         else:
                             # shouldn't happen
@@ -1374,7 +1390,9 @@ class calcCBH:
                                     break
                         else:
                             if set(self.alternative_rxn[precur][p_rung].keys()).issubset(self.energies.index.values):
-                                rxn = add_dicts(rxn, {rct: coeff*rxn[precur] for rct, coeff in self.alternative_rxn[precur][p_rung].items() if rct != precur})
+                                rxn = add_dicts(rxn, {rct: coeff*rxn[precur] 
+                                                      for rct, coeff in self.alternative_rxn[precur][p_rung].items() 
+                                                      if rct != precur})
                                 del rxn[precur]
                             else:
                                 self.error_messages[s].append(f"Error occurred during decomposition of CBH-{test_rung}-{label} when checking for lower rung equivalency. \n\tSome reactants of {precur} did not exist in the database.")
