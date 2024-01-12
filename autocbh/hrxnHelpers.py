@@ -1,6 +1,5 @@
-
 # ANL0
-def anl0_hrxn(delE: dict, *args) -> float:
+def anl0_hrxn(delE: dict) -> float:
     """
     Calculate the heat of reaction using energies and 
     corrections computed by ANL0 methodology.
@@ -28,11 +27,10 @@ def anl0_hrxn(delE: dict, *args) -> float:
     ---------
     :delE:      [dict] Contains energy (Hartree) and correction values
                     for ANL0.
-    :*args:     IGNORED
 
     RETURNS
     -------
-    :Hrxn:      [float] The heat of reaction using ANL0
+    :hrxn:      [float] The heat of reaction using ANL0
     """
 
     # these constants are used for basis set extrapolation
@@ -45,28 +43,28 @@ def anl0_hrxn(delE: dict, *args) -> float:
     cbs_qz_5z_high = 1.0 + cbs_qz_5z
 
     cbs = cbs_qz_5z_low * delE['avqz'] + cbs_qz_5z_high * delE['av5z']
-    Hrxn = (cbs + delE['zpe']) * hartree_to_kJpermole
+    hrxn = (cbs + delE['zpe']) * hartree_to_kJpermole
 
     keys = delE.keys()
     # don't add corrections if they are over 4 kJ/mol
-    if 'core_0_tz' in keys and 'core_X_tz' in keys and 'core_0_qz' in keys and 'core_X_qz' in keys: 
+    if 'core_0_tz' in keys and 'core_X_tz' in keys and 'core_0_qz' in keys and 'core_X_qz' in keys:
         core = cbs_tz_qz_low * (delE['core_0_tz'] - delE['core_X_tz']) + cbs_tz_qz_high * (delE['core_0_qz'] - delE['core_X_qz'])
         if abs(core * hartree_to_kJpermole) < 4.0:
-            Hrxn += core * hartree_to_kJpermole
+            hrxn += core * hartree_to_kJpermole
     if 'ccQ' in keys and 'ccT' in keys:
         ccTQ = delE['ccQ'] - delE['ccT']
         if abs(ccTQ * hartree_to_kJpermole) < 4.0:
-            Hrxn += ccTQ * hartree_to_kJpermole
+            hrxn += ccTQ * hartree_to_kJpermole
     if 'ci_DK' in keys and 'ci_NREL' in keys:
         ci = delE['ci_DK'] - delE['ci_NREL']
         if abs(ci * hartree_to_kJpermole) < 4.0:
-            Hrxn += ci * hartree_to_kJpermole
+            hrxn += ci * hartree_to_kJpermole
     if 'zpe_anharm' in keys and 'zpe_harm' in keys:
-        anharm = delE['zpe_anharm'] - delE['zpe_harm'] 
+        anharm = delE['zpe_anharm'] - delE['zpe_harm']
         if abs(anharm) < 4.0:
-            Hrxn += anharm # already kJ/mol
-    
-    return Hrxn
+            hrxn += anharm # already kJ/mol
+
+    return hrxn
 
 def sum_Hrxn(delE:dict, *args:str) -> float:
     """
@@ -86,9 +84,9 @@ def sum_Hrxn(delE:dict, *args:str) -> float:
     
     RETURNS
     -------
-    :Hrxn:      [float] The heat of reaction
+    :hrxn:      [float] The heat of reaction
     """
 
     hartree_to_kJpermole = 2625.499748 # (kJ/mol) / Hartree
-    Hrxn = (sum([delE[k] for k in args])) * hartree_to_kJpermole
-    return Hrxn
+    hrxn = (sum([delE[k] for k in args])) * hartree_to_kJpermole
+    return hrxn

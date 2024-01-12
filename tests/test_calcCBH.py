@@ -2,13 +2,13 @@
 # Test Suite for calcCBH.py #
 #############################
 
-from autocbh.calcCBH import calcCBH, add_dicts
-from autocbh.CBH import buildCBH
-from pytest import raises
 import os
+from pytest import raises
 from numpy import nan
 import numpy as np
 from rdkit.Chem import CanonSmiles
+from autocbh.calcCBH import calcCBH, add_dicts
+from autocbh.CBH import buildCBH
 
 class TestInit:
     ranking_file = 'tests/dummy_data/rankings.yaml'
@@ -133,11 +133,11 @@ def convert_dict_keys_to_CanonSmiles(dictionary:dict):
     return {CanonSmiles(s):v for s, v in dictionary.items()}
 
 def stoichiometric_math(energies_df, full_rxn, species, columns, convert_from_hartree_to_kjmol=False):
-        ans = -1*np.sum(np.vstack((full_rxn[s]*energies_df.loc[s, columns] for s in species)))
-        if convert_from_hartree_to_kjmol:
-            hartree_to_kJpermole = 2625.499748
-            ans *= hartree_to_kJpermole
-        return ans
+    ans = -1*np.sum(np.vstack((full_rxn[s]*energies_df.loc[s, columns] for s in species)))
+    if convert_from_hartree_to_kjmol:
+        hartree_to_kJpermole = 2625.499748
+        ans *= hartree_to_kJpermole
+    return ans
 
 class TestHf:
 

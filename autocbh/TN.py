@@ -1,13 +1,12 @@
+import os
 import numpy as np
 from rdkit import Chem
-import autocbh.CBH as CBH
 import networkx as nx
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_agraph import graphviz_layout
 from matplotlib import colors
-import os
 import yaml
-import autocbh.calcCBH as calcCBH
+from autocbh import CBH, calcCBH
 
 class thermochemical_network:
 
@@ -38,29 +37,32 @@ class thermochemical_network:
                     i.e., '[Pt]'
                     NOT INCLUDING THIS FOR ADSORBATES WILL RETURN MISLEADING TNs.
         """
-        
+
         self.smiles2rung = {}
         self.smiles2sat = {}
         self.smiles2rank = {}
         self._uses_dataframe = False
         self.use_decomposed_rxns = use_decomposed_rxns
         self.calcCBH_rxns = None
-        
+
         # check species argument
         if isinstance(species, str):
             try:
                 self.species = [Chem.CanonSmiles(species)]
-            except:
-                raise NameError(f'Arg "species" must be a valid SMILES string. Instead, {species} was given.')
+            except Exception as exc:
+                raise NameError(f'Arg "species" must be a valid SMILES string. \
+                                Instead, {species} was given.') from exc
         elif isinstance(species, list):
             try:
                 self.species = [Chem.CanonSmiles(smiles) for smiles in species]
-            except:
-                raise NameError(f'Arg "species" must contain valid SMILES strings. Check input.')
+            except Exception as exc:
+                raise NameError('Arg "species" must contain valid SMILES strings. \
+                                Check input.') from exc
 
         elif isinstance(species, calcCBH.calcCBH):
             if 'source' not in species.energies.columns:
-                raise NameError('Arg "energies_df" DataFrame must have the method of ∆Hf computation in a column named "source".')
+                raise NameError('Arg "energies_df" DataFrame must have the method of \
+                                ∆Hf computation in a column named "source".')
             self._uses_dataframe = True
             smiles2source = dict(zip(list(species.energies.index), species.energies.loc[:,'source'].values.tolist()))
             self.species = list(smiles2source.keys())
@@ -71,11 +73,17 @@ class thermochemical_network:
                     # CBH used
                     if 'avg' in smiles2source[s].split('//')[0]:
                         # ex. CBHavg-(N-S, N-S, N-alt)
-                        self.smiles2rung[s] = [float(sub.split('-')[0]) if ':' not in sub else float(sub.split('-')[0].split(':')[0]) for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
-                        self.smiles2sat[s] = [sub.split('-')[1] for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
+                        self.smiles2rung[s] = [float(sub.split('-')[0])
+                                               if ':' not in sub
+                                               else float(sub.split('-')[0].split(':')[0])
+                                               for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
+                        self.smiles2sat[s] = [sub.split('-')[1]
+                                              for sub in smiles2source[s].split('//')[0][8:-1].split(', ')]
                     else:
                         # ex. CBH-N-S
-                        self.smiles2rung[s] = [float(smiles2source[s].split('//')[0].split('-')[1]) if ':' not in smiles2source[s] else float(smiles2source[s].split('//')[0].split('-')[1].split(':')[0])]
+                        self.smiles2rung[s] = [float(smiles2source[s].split('//')[0].split('-')[1])
+                                               if ':' not in smiles2source[s]
+                                               else float(smiles2source[s].split('//')[0].split('-')[1].split(':')[0])]
                         self.smiles2sat[s] = [smiles2source[s].split('//')[0].split('-')[2]]
                     self.smiles2rank[s] = species.rankings_rev[smiles2source[s].split('//')[1].split('+')[0]]
                 else:
@@ -97,28 +105,33 @@ class thermochemical_network:
         # check saturate argument
         ptable = Chem.GetPeriodicTable()
         if not isinstance(saturate, (int, str)):
-            raise TypeError(f'Arg "saturate" must be an integer or string representing an element to saturate fragements. Instead, {type(saturate)} was given.')
+            raise TypeError(f'Arg "saturate" must be an integer or string representing an \
+                            element to saturate fragements. Instead, {type(saturate)} was given.')
         elif isinstance(saturate, int):
             try:
                 ptable.GetElementSymbol(saturate)
                 self.saturate = saturate
-            except:
-                raise NameError(f'Arg "saturate" must be a integer that maps to an element in the periodic table. Instead, {saturate} was given.')
+            except Exception as exc:
+                raise NameError(f'Arg "saturate" must be a integer that maps to an element in the \
+                                periodic table. Instead, {saturate} was given.') from exc
         elif isinstance(saturate, str):
             try:
                 self.saturate = ptable.GetAtomicNumber(saturate)
-            except:
-                raise NameError(f'Arg "saturate" must be a string that maps to an element in the periodic table. Instead, {saturate} was given.')
-            
+            except Exception as exc:
+                raise NameError(f'Arg "saturate" must be a string that maps to an element in the \
+                                periodic table. Instead, {saturate} was given.') from exc
 
         self.surface_smiles = surface_smiles
         if isinstance(species, (str, list)):
             cbhs = [CBH.buildCBH(smiles, saturate=saturate, allow_overshoot=True, surface_smiles=surface_smiles) for smiles in self.species]
-            self.highest_rungs = [cbh.highest_cbh if cbh.highest_cbh <= self.max_rung else self.max_rung for cbh in cbhs]
+            self.highest_rungs = [cbh.highest_cbh if cbh.highest_cbh <= self.max_rung
+                                  else self.max_rung for cbh in cbhs]
         
-            all_smiles = [list(cbh.cbh_rcts[rung].keys()) + list(cbh.cbh_pdts[rung].keys()) for i, cbh in enumerate(cbhs) for rung in range(self.highest_rungs[i])]
+            all_smiles = [list(cbh.cbh_rcts[rung].keys()) + list(cbh.cbh_pdts[rung].keys())
+                          for i, cbh in enumerate(cbhs) for rung in range(self.highest_rungs[i])]
 
-            self.all_smiles = list(set([smiles for sublist in all_smiles for smiles in sublist] + self.species))
+            self.all_smiles = list(set([smiles for sublist in all_smiles 
+                                        for smiles in sublist] + self.species))
 
         elif isinstance(species, calcCBH.calcCBH):
             self.highest_rungs = [1]*len(self.species) # doesn't matter since not used directly
@@ -197,11 +210,11 @@ class thermochemical_network:
         -------
         None
         """
-        
+
         if prev_cbh_rung == 0:
-            return 
-        
-        def _inner_loop(smiles, dict_iter, highest_rung, isalt=False):
+            return
+
+        def _inner_loop(smiles, dict_iter, highest_rung):
             species_index = self.smiles2index[smiles]
             for precursors_dict in dict_iter:
                 for s in precursors_dict.keys():
@@ -217,7 +230,8 @@ class thermochemical_network:
 
                     if not self.graph.has_edge(species_index, precursor_index):
                         if self._uses_dataframe:
-                            self.graph.add_edge(species_index, precursor_index, rung=highest_rung, rank=self.smiles2rank[s])
+                            self.graph.add_edge(species_index, precursor_index, 
+                                                rung=highest_rung, rank=self.smiles2rank[s])
                         else:
                             self.graph.add_edge(species_index, precursor_index, rung=highest_rung)
 
@@ -226,23 +240,28 @@ class thermochemical_network:
                         self._build_recurs(s, highest_rung)
 
 
-        if smiles in self.smiles2rung:            
+        if smiles in self.smiles2rung:
             for rung, sat in zip(self.smiles2rung[smiles], self.smiles2sat[smiles]):
                 if rung is None or sat is None:
                     return
 
                 if sat != 'alt':
-                    cbh = CBH.buildCBH(smiles, saturate=sat, allow_overshoot=True, surface_smiles=self.surface_smiles)
+                    cbh = CBH.buildCBH(smiles, saturate=sat, allow_overshoot=True,
+                                       surface_smiles=self.surface_smiles)
                     highest_rung = rung if rung <= self.max_rung else self.max_rung
                     dict_iter = [cbh.cbh_pdts[highest_rung], cbh.cbh_rcts[highest_rung]]
                     _inner_loop(smiles, dict_iter, highest_rung)
 
                 elif sat == 'alt' and self._uses_dataframe:
-                    dict_iter = [self.calcCBH_rxns[smiles][str(rung)+'-alt' if str(rung).split('.')[1] != '0' else str(int(rung))+'-alt']]
+                    dict_iter = [self.calcCBH_rxns[smiles][str(rung)+'-alt'
+                                                           if str(rung).split('.')[1] != '0'
+                                                           else str(int(rung))+'-alt']]
                     _inner_loop(smiles, dict_iter, highest_rung)
         else:
             try:
-                cbh = CBH.buildCBH(smiles, saturate=self.saturate, allow_overshoot=True, surface_smiles=self.surface_smiles)
+                cbh = CBH.buildCBH(smiles, saturate=self.saturate,
+                                   allow_overshoot=True,
+                                   surface_smiles=self.surface_smiles)
             except KeyError:
                 return
 
@@ -252,9 +271,10 @@ class thermochemical_network:
 
 
 
-    def visualize(self, graph:nx.DiGraph=None, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
-                  figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12,
-                  edge_rank:bool=False):
+    def visualize(self, graph:nx.DiGraph=None, relabel_node_mapping:dict or str=None,
+                  reverse_relabel_node_mapping:bool=None,figsize:tuple=(24,8),
+                  title:str=None, save_fig_path:str=None, dpi:int or float=None,
+                  label_font_size:int=12, edge_rank:bool=False):
         """
         Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
         Nodes are color-coded for the importance of a given molecule.
@@ -300,16 +320,16 @@ class thermochemical_network:
         """
         if not graph:
             graph = self.graph.copy()
-        
-        visualize(graph, 
-                  relabel_node_mapping=relabel_node_mapping, 
+
+        visualize(graph,
+                  relabel_node_mapping=relabel_node_mapping,
                   reverse_relabel_node_mapping=reverse_relabel_node_mapping,
                   figsize=figsize,
                   title=title,
                   save_fig_path=save_fig_path,
                   dpi=dpi,
-                  label_font_size=label_font_size, 
-                  edge_rank=edge_rank, 
+                  label_font_size=label_font_size,
+                  edge_rank=edge_rank,
                   use_decomposed_rxns=self.use_decomposed_rxns)
 
 
@@ -340,11 +360,14 @@ class thermochemical_network:
             subgraphs.append(subgraph)
         subgraph = nx.compose_all(subgraphs)
         return subgraph
-    
 
-def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_relabel_node_mapping:bool=None, 
-                figsize:tuple=(24,8), title:str=None, save_fig_path:str=None, dpi:int or float=None, label_font_size:int=12,
-                edge_rank:bool=False, use_decomposed_rxns:bool=False):
+
+def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None,
+              reverse_relabel_node_mapping:bool=None,
+              figsize:tuple=(24,8), title:str=None,
+              save_fig_path:str=None, dpi:int or float=None,
+              label_font_size:int=12, edge_rank:bool=False,
+              use_decomposed_rxns:bool=False):
     """
     Visualize network as a tree (DAG). Edges are color-coded for CBH rung.
     Nodes are color-coded for the importance of a given molecule.
@@ -396,15 +419,16 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
 
     if relabel_node_mapping and isinstance(relabel_node_mapping, dict):
         if reverse_relabel_node_mapping:
-                alias_rev = {v:k for k, v in relabel_node_mapping.items()}
-                graph = nx.relabel_nodes(graph, alias_rev)
+            alias_rev = {v:k for k, v in relabel_node_mapping.items()}
+            graph = nx.relabel_nodes(graph, alias_rev)
         else:
             graph = nx.relabel_nodes(graph, relabel_node_mapping)
 
     elif relabel_node_mapping and isinstance(relabel_node_mapping, str):
         if relabel_node_mapping[-5:] != '.yaml':
-            print(f'Not a vaild YAML file (must end in .yaml). Please check your input to arg "relabel_node_mapping": f{relabel_node_mapping}. Continuing without relabeling.')
-            graph = graph
+            print(f'Not a vaild YAML file (must end in .yaml). \
+                  Please check your input to arg "relabel_node_mapping": \
+                  f{relabel_node_mapping}. Continuing without relabeling.')
         elif os.path.isfile(relabel_node_mapping):
             with open(relabel_node_mapping, 'r') as f:
                 alias = yaml.safe_load(f)
@@ -417,34 +441,37 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
 
     # ax = plt.figure(figsize=figsize)
     if not use_decomposed_rxns:
-        fig, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
+        _, axs = plt.subplots(ncols=3,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01, 0.01]})
     else:
-        fig, axs = plt.subplots(ncols=2,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01]})
+        _, axs = plt.subplots(ncols=2,figsize=figsize, gridspec_kw={"width_ratios":[1, 0.01]})
     pos = graphviz_layout(graph, prog='dot')
     edge_cmap = plt.cm.tab10
     node_cmap = plt.cm.Blues
     if title:
         plt.suptitle(title, fontsize=30)
-    
+
     used_rank = False
     if not use_decomposed_rxns:
         if edge_rank:
             try:
                 edge_color = [graph[u][v]['rank'] for u,v in graph.edges]
                 used_rank = True
-            except:
+            except KeyError:
                 edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
         else:
             edge_color = [graph[u][v]['rung'] for u,v in graph.edges]
-    
-        nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9, edge_color=edge_color, edge_cmap=edge_cmap, edge_vmin=min(edge_color),edge_vmax=max(edge_color))
+
+        nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True,
+                node_size=0, font_size=9, edge_color=edge_color,
+                edge_cmap=edge_cmap, edge_vmin=min(edge_color),
+                edge_vmax=max(edge_color))
     else:
         nx.draw(graph, pos, ax=axs[0], with_labels=False, arrows=True, node_size=0, font_size=9)
 
-    node_colors = [v for v in nx.get_node_attributes(graph, 'num_ancestors').values()]
-    
+    node_colors = list(nx.get_node_attributes(graph, 'num_ancestors').values())
+
     nx.draw_networkx_nodes(graph, pos=pos, node_size=0)
-    
+
     labels = nx.draw_networkx_labels(graph, pos=pos, ax=axs[0],
                                     labels={node:node for node in graph.nodes.keys()},
                                     bbox=dict(edgecolor='black', boxstyle='round,pad=0.5'),
@@ -452,15 +479,18 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
 
     # node color
     color_scale = 0.3
-    normalize_node_colors = (np.array(node_colors) - min(node_colors))/(max(node_colors) - min(node_colors))
+    normalize_node_colors = (np.array(node_colors) - min(node_colors))\
+                            /(max(node_colors) - min(node_colors))
     for t, c in zip(labels.values(), normalize_node_colors):
         #manipulate indiviual text objects
         t.set_backgroundcolor(node_cmap(c-color_scale))
-    
+
     # plot node colorbar (number of ancestors (ie. larger molecules))
     norm = colors.Normalize(min(node_colors), max(node_colors), clip=True)
-    cbar = axs[0].figure.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=node_cmap), pad=0.05, cax=axs[1])
-    cbar.set_label(label=f'Number of Dependents', size=20)
+    cbar = axs[0].figure.colorbar(plt.cm.ScalarMappable(norm=norm,
+                                                        cmap=node_cmap),
+                                    pad=0.05, cax=axs[1])
+    cbar.set_label(label='Number of Dependents', size=20)
     cbar.ax.tick_params(labelsize=20)
 
     # plot edge colorbar (rung)
@@ -473,7 +503,9 @@ def visualize(graph:nx.DiGraph, relabel_node_mapping:dict or str=None, reverse_r
             edge_cmap_bounds.append(edge_cmap_bounds[-1]+1)
         edge_cmap_bounds = np.array(edge_cmap_bounds)
         edge_norm = colors.BoundaryNorm(edge_cmap_bounds, edge_cmap.N)
-        cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm, cmap=edge_cmap), pad=0.05, cax=axs[2])
+        cbar = axs[1].figure.colorbar(plt.cm.ScalarMappable(norm=edge_norm,
+                                                            cmap=edge_cmap),
+                                        pad=0.05, cax=axs[2])
         if used_rank:
             cbar.set_label(label='Level of Theory', size=20)
         else:

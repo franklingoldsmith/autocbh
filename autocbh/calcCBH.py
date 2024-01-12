@@ -1,16 +1,16 @@
-# import CBH
-import autocbh.CBH as CBH
-from autocbh.CBH import add_dicts
-import numpy as np
-import pandas as pd
-from numpy import nan, isnan
-from rdkit.Chem import MolFromSmiles, AddHs, CanonSmiles, GetPeriodicTable
-from autocbh.data.molData import load_rankings, generate_database, generate_alternative_rxn_file
-from autocbh.hrxnHelpers import anl0_hrxn, sum_Hrxn
 import os
-import yaml
 from itertools import compress
 from copy import copy
+import numpy as np
+from rdkit.Chem import MolFromSmiles, AddHs, CanonSmiles, GetPeriodicTable
+from numpy import nan, isnan
+import pandas as pd
+import yaml
+# import CBH
+from autocbh import CBH
+from autocbh.CBH import add_dicts
+from autocbh.data.molData import load_rankings, generate_database, generate_alternative_rxn_file
+from autocbh.hrxnHelpers import anl0_hrxn, sum_Hrxn
 
 
 class calcCBH:
@@ -48,13 +48,15 @@ class calcCBH:
                             at each rung for a given species
     """
 
-    def __init__(self, methods:list=[], 
-                 dataframe_path:str=None, 
-                 method_keys_path:str=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data/methods_keys.yaml'), 
-                 rankings_path:str=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data/rankings.yaml'), 
-                 alternative_rxn_path:str=None, 
-                 force_generate_database:str=None, 
-                 force_generate_alternative_rxn:str=None, 
+    def __init__(self, methods:list=None,
+                 dataframe_path:str=None,
+                 method_keys_path:str=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                   '../data/methods_keys.yaml'),
+                 rankings_path:str=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                '../data/rankings.yaml'),
+                 alternative_rxn_path:str=None,
+                 force_generate_database:str=None,
+                 force_generate_alternative_rxn:str=None,
                  zero_out_heats:bool=False):
         """
         ARGUMENTS
@@ -98,8 +100,13 @@ class calcCBH:
                 sources that are not rank 1 (experimental) to 0.
         """
 
+        if methods is None:
+            methods = []
+
         if force_generate_database is None and dataframe_path is None:
-            raise ValueError('Either a dataframe pkl filepath or a path to a folder holding molecule data in YAML files must be provided to the "dataframe_path" or "force_generate_database" arguments.')
+            raise ValueError('Either a dataframe pkl filepath or a path to a folder \
+                             holding molecule data in YAML files must be provided to \
+                             the "dataframe_path" or "force_generate_database" arguments.')
 
         # Generate Database
         if force_generate_database:
@@ -107,18 +114,10 @@ class calcCBH:
         else:
             if dataframe_path:
                 self.energies = pd.read_pickle(dataframe_path)
-            
             # This will not happen
             else:
                 self.energies = pd.read_pickle('./data/pfas_energies.pkl')
-                # self.energies = generate_database('data/molecule_data/')[0] # something is different
                 self.energies[['DrxnH']] = 0 # add delta heat of reaction column --> assume 0 for ATcT values
-                ###
-                # This stuff should go into test cases
-                # self.energies.drop('CC(F)(F)F',axis=0, inplace=True) # for testing
-                # self.energies.loc['CC(C)(F)F', ['avqz','av5z','zpe','ci_DK','ci_NREL','core_0_tz','core_X_tz','core_0_qz','core_X_qz',
-                # 'ccT','ccQ','zpe_harm','zpe_anharm','b2plypd3_zpe','b2plypd3_E0','f12a','f12b','m062x_zpe',
-                # 'm062x_E0','m062x_dlpno','wb97xd_zpe','wb97xd_E0','wb97xd_dlpno']] = nan
         print(f'Loaded database contains {len(self.energies)} species.')
 
         # sort by num C then by SMILES length
@@ -165,10 +164,10 @@ class calcCBH:
         self.rankings = load_rankings(rankings_path)
         # remove items from rankings list that aren't needed based on user selected methods
         del_methods = {} # stores methods to delete from self.rankings
-        for rank in self.rankings.keys():
+        for rank, methods_ in self.rankings.items():
             if rank == 0 or rank == 1:
                 continue
-            for m in self.rankings[rank]:
+            for m in methods_:
                 if m not in self.methods_keys_dict.keys():
                     if rank not in del_methods.keys():
                         del_methods[rank] = [m]
@@ -198,8 +197,9 @@ class calcCBH:
         if zero_out_heats:
             # zero out heats of formation for species without experimental heats of formation
             # zero out heats of reaction for all species
-            non_exp_species = [s for s in self.energies.index.values 
-                               if (type(self.energies.loc[s, 'source']) is not str and isnan(self.energies.loc[s, 'source'])) or self.rankings_rev[self.energies.loc[s, 'source']] != 1]
+            non_exp_species = [s for s in self.energies.index.values
+                               if (not isinstance(self.energies.loc[s, 'source'], str) and isnan(self.energies.loc[s, 'source']))
+                               or self.rankings_rev[self.energies.loc[s, 'source']] != 1]
             self.energies.loc[non_exp_species, ['DfH']] = 0.0
             self.energies.loc[:, ['DrxnH']] = 0.0
 
@@ -799,9 +799,11 @@ class calcCBH:
             # weights = {method_keys : [weights_cbh_type]}
             weighted_Hrxn = {}
             weighted_Hf = {}
-            for k in weights.keys():
-                weighted_Hrxn[k] = sum([weights[k][i]*abs(Hrxn_sat[k]) for i, Hrxn_sat in enumerate(Hrxn_ls)])
-                weighted_Hf[k] = sum([weights[k][i]*Hf_sat[k] for i, Hf_sat in enumerate(Hf_ls)])
+            for k, w in weights.items():
+                weighted_Hrxn[k] = sum([w[i]*abs(Hrxn_sat[k]) 
+                                        for i, Hrxn_sat in enumerate(Hrxn_ls)])
+                weighted_Hf[k] = sum([w[i]*Hf_sat[k] 
+                                      for i, Hf_sat in enumerate(Hf_ls)])
             
         return weighted_Hrxn, weighted_Hf
 
@@ -995,15 +997,15 @@ class calcCBH:
         """
         
         ptable = GetPeriodicTable()
-        if type(saturate) == str:
+        if isinstance(saturate, str):
             saturate = ptable.GetAtomicNumber(saturate)
         saturate_sym = ptable.GetElementSymbol(saturate)
 
         s = CanonSmiles(smiles) # standardize SMILES
         s_cbh = CBH.buildCBH(s, saturate, surface_smiles=surface_smiles)
 
-        Hf = {}
-        Hrxn = {}
+        hf = {}
+        hrxn = {}
         if s in self.error_messages:
             start_err_len = len(self.error_messages[s])
         else:
@@ -1017,17 +1019,18 @@ class calcCBH:
                     self.error_messages[s].append(prepend_str)
 
                 # stores decomposed reaction of a given rung in self.rxns
-                _ = self._decompose_rxn(s, rung, s_cbh.cbh_rcts, s_cbh.cbh_pdts,  saturate_sym) 
+                _ = self._decompose_rxn(s, rung, s_cbh.cbh_rcts, s_cbh.cbh_pdts,  saturate_sym)
                 rxn = copy(self.rxns[s][saturate_sym])
                 rxn.update({s:-1})
                 check_precursors_exist = [p in self.energies.index.values for p in rxn.keys()]
                 if all(check_precursors_exist):
-                    Hrxn[rung], Hf[rung] = self.Hf(s, rxn, skip_precursor_check=True, hrxn_fcns=hrxn_fcns)
+                    hrxn[rung], hf[rung] = self.Hf(s, rxn, skip_precursor_check=True,
+                                                   hrxn_fcns=hrxn_fcns)
                 else:
                     continue
 
-            except TypeError:
-                raise TypeError(f'Cannot compute CBH-{rung}')
+            except TypeError as exc:
+                raise TypeError(f'Cannot compute CBH-{rung}') from exc
 
         if self.error_messages[s][-1] == prepend_str:
             if len(self.error_messages[s])==1:
@@ -1035,12 +1038,14 @@ class calcCBH:
             else:
                 self.error_messages[s].pop() # delete prepend_str
         else:
-            self.error_messages[s].append('Conclude computation of all heats of formation for all rungs.')
+            self.error_messages[s].append('Conclude computation of all \
+                                          heats of formation for all rungs.')
 
         if s in self.error_messages and start_err_len > len(self.error_messages[s]):
-            print(f'Errors encountered while computing all heats of formation for {s}. View with error_messages[{s}] methods.')
+            print(f'Errors encountered while computing all heats of formation \
+                  for {s}. View with error_messages[{s}] methods.')
 
-        return pd.DataFrame(Hrxn), pd.DataFrame(Hf)
+        return pd.DataFrame(hrxn), pd.DataFrame(hf)
 
 
     def _choose_best_method(self, Hrxn: dict, Hf: dict, label: str):
@@ -1075,12 +1080,13 @@ class calcCBH:
         # cyle through ascending rank
         for rank in sorted(self.rankings.keys()):
             # record theories in Hrxn dict for a given rank
-            theories_in_hrxn = [theory for theory in set(self.rankings[rank]) if theory in hrxn_theories]
+            theories_in_hrxn = [theory for theory in set(self.rankings[rank])
+                                if theory in hrxn_theories]
 
             if rank == 0 or len(theories_in_hrxn) == 0:
                 # we ignore rank=0
                 # or go to next rank if none exist for current one
-                continue 
+                continue
 
             elif len(theories_in_hrxn) == 1:
                 # only one level of theory in this rank
@@ -1092,7 +1098,7 @@ class calcCBH:
                 else:
                     # go to lower rank
                     continue
-            
+
             # when multiple equivalent rankings
             elif len(theories_in_hrxn) >= 1:
                 theories = []
@@ -1104,15 +1110,15 @@ class calcCBH:
                         theories.append(theory)
                         hrxns.append(Hrxn[theory])
                         hfs.append(Hf[theory])
-                
+
                 # in case all are nan, go to lower rank
                 if len(hrxns) == 0:
                     continue
-                
+
                 # in case only 1 was not nan
                 elif len(hrxns) == 1:
                     return hrxns[0], hfs[0], label + '//' + theories[0]
-                
+
                 else:
                     # generate weighted Hrxn and Hf
                     rank_weights = np.array(self._weight(*hrxns))
@@ -1154,7 +1160,7 @@ class calcCBH:
 
             weights[ind] = 1 / len(ind)
             return weights.tolist()
-        
+
         # more common case where Hrxn is not exactly 0
         denom = 0
         # calculate denom
@@ -1174,7 +1180,7 @@ class calcCBH:
         return weights.tolist()
 
 
-    def _decompose_rxn(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str): 
+    def _decompose_rxn(self, s: str, test_rung: int, cbh_rcts: dict, cbh_pdts: dict, label: str):
         """
         ARGUMENTS
         ---------
@@ -1214,7 +1220,7 @@ class calcCBH:
                     for precur in sp_null.index[sp_null.values]:
                         species_null_ls.append(precur)
                     species_null[i] = any(sp_null.values)
-                
+
                 # if all of the methods are missing at least one necessary energy, move down a rung
                 if all(species_null):
                     test_rung -= 1
@@ -1229,13 +1235,13 @@ class calcCBH:
                     rxn = add_dicts(cbh_pdts[rung], {k : -v for k, v in cbh_rcts[rung].items()})
                     rxns.append(rxn) # changed from .append(None)
                     rungs_str.append('')
-                    extra_messages[rung] = f'Missing energies'
+                    extra_messages[rung] = 'Missing energies'
                     continue
-            
+
             # triggers when a precursor in the CBH scheme does not appear in the database
-            except KeyError as e:
+            except KeyError:
                 test_rung -= 1
-                
+
                 # find all precursors that aren't present in the database
                 missing_precursors = ''
                 for precursors in all_precursors:
@@ -1246,14 +1252,14 @@ class calcCBH:
                 if test_rung >=0:
                     self.error_messages[s][-1] += f'\n\tRung will move down to CBH-{test_rung}-{label}.'
                 else:
-                    self.error_messages[s][-1] += f'\n\tCRITICAL ERROR: The reaction cannot be broken down into smaller species.'
-                    self.error_messages[s][-1] += f'\n\tCRITICAL ERROR: This may have caused unwanted errors or exit via error.'
-                    self.error_messages[s][-1] += f'\n\tCRITICAL ERROR: Check for SMILES typos, errors in input DataFrame, and reconsider'
-                    self.error_messages[s][-1] += f'\n\t'+' '*16+'whether this species is necessary for future computations.'
+                    self.error_messages[s][-1] += '\n\tCRITICAL ERROR: The reaction cannot be broken down into smaller species.'
+                    self.error_messages[s][-1] += '\n\tCRITICAL ERROR: This may have caused unwanted errors or exit via error.'
+                    self.error_messages[s][-1] += '\n\tCRITICAL ERROR: Check for SMILES typos, errors in input DataFrame, and reconsider'
+                    self.error_messages[s][-1] += '\n\t'+' '*16+'whether this species is necessary for future computations.'
                 coeffs.append(np.inf)
                 rxns.append({})
                 rungs_str.append('')
-                extra_messages[rung] = f'Missing precursor'
+                extra_messages[rung] = 'Missing precursor'
                 continue
 
             # 2. check sources of target and all reactants
@@ -1280,8 +1286,9 @@ class calcCBH:
                     break
             
             #   2b. Get list of unique theories for each of the precursors
-            if False not in [type(s)==str for s in sources]:
-                new_sources = [s.split('//')[1].split('+')[0] if 'CBH' in s and len(s.split('//'))>1 else s for s in sources]
+            if False not in [isinstance(s,str) for s in sources]:
+                new_sources = [s.split('//')[1].split('+')[0] 
+                               if 'CBH' in s and len(s.split('//'))>1 else s for s in sources]
                 source_rank = list([self.rankings_rev[source] for source in new_sources])
             else: # if a species Hf hasn't been computed yet, its source will be type==float, so move down a rung
                 # This will appropriately trigger for overshooting cases
@@ -1290,7 +1297,7 @@ class calcCBH:
                 rxn = add_dicts(cbh_pdts[rung], {k : -v for k, v in cbh_rcts[rung].items()})
                 rxns.append(rxn) # changed from .append(None)
                 rungs_str.append('')
-                extra_messages[rung] = f'Missing Hf'
+                extra_messages[rung] = 'Missing Hf'
                 continue
             
             # reaction dictionary
@@ -1447,10 +1454,11 @@ class calcCBH:
         if rung == '':
             for r in rungs:
                 if r in extra_messages:
-                    if extra_messages[r] in (f'Missing energies', f'Missing Hf'):
+                    if extra_messages[r] in ('Missing energies', 'Missing Hf'):
                         rung = str(r)
                         ind = np.where(np.array(rungs)==r)[0][0]
-                        self.error_messages[s].append(f'Missing energies or DfH values in dataframe so calculations may result in NaN values.')
+                        self.error_messages[s].append('Missing energies or DfH values \
+                                                      in dataframe so calculations may result in NaN values.')
                         break
                     # elif equivalent rung --> should not occur
             else:
@@ -1461,14 +1469,15 @@ class calcCBH:
                             if extra_messages[r] == 'Missing precursor':
                                 rung = str(r)
                                 ind = np.where(np.array(rungs)==r)[0][0]
-                                self.error_messages[s].append(f'Missing precursor so calculations may result in NaN values.')
+                                self.error_messages[s].append('Missing precursor so \
+                                                              calculations may result in NaN values.')
                                 break
 
         if ':' in rung or float(rung) != test_rung:
             if test_rung >= 0:
                 self.error_messages[s].append(f'This species was decomposed from CBH-{test_rung}-{label} to be made up of species from CBH-{label}: {int(rung) if ":" not in rung else rung.split(":")}')
-                self.error_messages[s][-1] += f'\n\tBeware that the logged rungs may not be fully representative. \n\tThey are drawn only from comparing reference species to this specific saturation scheme.'
-                self.error_messages[s][-1] += f'\n\tIt is possible that the decomposed reaction contains higher or lower rungs from other saturation schemes.\n\tCheck self.rxns attribute for accurate representation.'
+                self.error_messages[s][-1] += '\n\tBeware that the logged rungs may not be fully representative. \n\tThey are drawn only from comparing reference species to this specific saturation scheme.'
+                self.error_messages[s][-1] += '\n\tIt is possible that the decomposed reaction contains higher or lower rungs from other saturation schemes.\n\tCheck self.rxns attribute for accurate representation.'
         self.rxns[s][label] = rxns[ind] # moved from above new if statement
         return rung
 
@@ -1509,9 +1518,8 @@ class calcCBH:
             if len(self.error_messages[s]) == 0: 
                 self.error_messages[s] = ['']
             self.error_messages[s][-1] += "\n\tReaction dictionaries hold the target species' precursors and respective coefficients \n\twhere negatives imply reactants and positives are products."
-            self.error_messages[s][-1] += f"\n\tBelow is the partially decomposed reaction: \n\t{precur_rxn}"
-            self.error_messages[s][-1] += f"\n\tThe decomposed reaction will be subtracted from each CBH rung. \n\tFor equivalency, all coefficients must be 0 which would yield an emtpy dictionary."
-
+            self.error_messages[s][-1] += "\n\tBelow is the partially decomposed reaction: \n\t{precur_rxn}"
+            self.error_messages[s][-1] += "\n\tThe decomposed reaction will be subtracted from each CBH rung. \n\tFor equivalency, all coefficients must be 0 which would yield an emtpy dictionary."
         ls_rungs = []
         precur_rxn_keys = list(precur_rxn.keys())
         rm_keys = []
@@ -1529,13 +1537,13 @@ class calcCBH:
             total_prec = add_dicts(new_cbh, precur_rxn)
             if verbose_error:
                 self.error_messages[s][-1] += f"\n\tSubtracted from CBH-{r}: \n\t{total_prec}"
-            
+
             if not total_prec: # empty dict will return False
                 if verbose_error and 'Subtracted from' in self.error_messages[s][-1]:
                     # this deletes the verbose nature of the error message since it already prints that the reaction is equivalent to a lower rung
                     del self.error_messages[s][-1]
                 return r
-            
+
             for sp in precur_rxn_keys:
                 if sp in cbh_pdts[r].keys() and sp not in rm_keys:
                     ls_rungs.append(r)
@@ -1545,7 +1553,7 @@ class calcCBH:
                     rm_keys.append(sp)
 
         return ls_rungs
-    
+
 
     def _check_alt_rxn_usability(self, s:str, alt_rxn_keys:list):
         """
@@ -1607,7 +1615,7 @@ class calcCBH:
             self.error_messages[s][-1] += '\nUtilizing CBH scheme instead.'
             return None
 
-    
+
     def _missing_precursor_str(self, missing_precursors):
         """
         Generate string for self.error_messages that formats all 
@@ -1622,13 +1630,13 @@ class calcCBH:
         -------
         :missing_precursor_str: [str] formated string
         """
-        
+
         missing_precursors_str = ''
         for precursors in missing_precursors:
             missing_precursors_str += '\n\t   '+precursors
         return missing_precursors_str
-    
-    
+
+
     def print_errors(self):
         """
         Print error messages after calcCBH.calcHf() method completed.
@@ -1689,8 +1697,7 @@ class calcCBH:
             try:
                 folder_path = kwargs['folder_path']
             except KeyError as e:
-                # err_msg = KeyErrorMessage()
-                raise KeyError('Since save_each_molecule_file was True, the user must provide a path to a folder that contains the files of each molecule.')
+                raise KeyError('Since save_each_molecule_file was True, the user must provide a path to a folder that contains the files of each molecule.') from e
 
             for filename in os.listdir(folder_path):
                 f = os.path.join(folder_path, filename)
@@ -1736,7 +1743,7 @@ class calcCBH:
             try:
                 file_path = kwargs['file_path']
             except KeyError as e:
-                raise KeyError('Since save_pd_dictionary was True, the user must provide a filepath for which to save the self.energies dataframe.')
+                raise KeyError('Since save_pd_dictionary was True, the user must provide a filepath for which to save the self.energies dataframe.') from e
 
             # check last 5 in str and make sure it's '.pkl', else add it
             if file_path[-4:] != '.pkl':
@@ -1818,7 +1825,7 @@ class calcCBH:
             all_rcts[species] = cbh.cbh_rcts
             all_pdts[species] = cbh.cbh_pdts
             highest_rung_per_molec.append(cbh.highest_cbh)
-        
+
         # Find the highest CBH rung of all the CBH schemes
         highest_rung = max(highest_rung_per_molec)
 

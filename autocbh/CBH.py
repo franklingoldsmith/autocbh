@@ -1,8 +1,8 @@
+from collections import defaultdict
 from rdkit import Chem
 from rdkit.Chem.Descriptors import NumRadicalElectrons
 from igraph import Graph
 import numpy as np
-from collections import defaultdict
 
 
 class buildCBH:
@@ -40,7 +40,8 @@ class buildCBH:
     visualize       Used to visualize CBH reactions in Jupyter Notebook. 
     """
 
-    def __init__(self, smiles:str, saturate=1, allow_overshoot=False, ignore_F2=True, surface_smiles:str=None):
+    def __init__(self, smiles:str, saturate=1, allow_overshoot=False, 
+                 ignore_F2=True, surface_smiles:str=None):
         """
         Constructs the attributes of buildCBH class.
 
@@ -74,12 +75,12 @@ class buildCBH:
                 i.e., '[Pt]'
         """
         if smiles == '[H][H]':
-            raise KeyError(f'SMILES: "[H][H]". It is impossible to generate a CBH scheme for "[H][H]".')
+            raise KeyError('SMILES: "[H][H]". It is impossible to generate a CBH scheme for "[H][H]".')
 
         if surface_smiles and surface_smiles not in smiles and '.' in smiles:
-            raise NameError(f'Cannot use a physiosorbed species with a surface that is not present in the SMILES string.')
+            raise NameError('Cannot use a physiosorbed species with a surface that is not present in the SMILES string.')
         elif '.' in smiles and surface_smiles is None:
-            raise NameError(f'Cannot use a physiosorbed species without specifying a surface_smiles.')
+            raise NameError('Cannot use a physiosorbed species without specifying a surface_smiles.')
         
         if surface_smiles and surface_smiles in smiles:
             self.smiles_ads = Chem.CanonSmiles(smiles)
@@ -88,14 +89,14 @@ class buildCBH:
             # convert surface_smiles to Canon form
             try:
                 surface_smiles = Chem.CanonSmiles(surface_smiles)
-            except:
-                raise ValueError(f'Arg "surface_smiles" must be a valid SMILES string. Instead, "{surface_smiles}" was given.')
+            except Exception as exc:
+                raise ValueError(f'Arg "surface_smiles" must be a valid SMILES string. Instead, "{surface_smiles}" was given.') from exc
             # make sure surface smiles is just an element
             try:
                 ptable = Chem.GetPeriodicTable()
                 ptable.GetAtomicNumber(surface_smiles.replace('[','').replace(']',''))
-            except:
-                raise ValueError(f'Arg "surface_smiles" must be an element. Instead, "{surface_smiles}" was given.')
+            except Exception as exc:
+                raise ValueError(f'Arg "surface_smiles" must be an element. Instead, "{surface_smiles}" was given.') from exc
             self.surface_smiles = surface_smiles
             
             # check the number of components
@@ -157,11 +158,11 @@ class buildCBH:
                 
                 if saturate == 1:
                     # Get number of H in product (bakes in stoichiometry)
-                    pdt_H = sum([self.cbh_pdts[0][s]*Chem.MolFromSmiles(s).GetAtomWithIdx(0).GetTotalNumHs() \
+                    pdt_h = sum([self.cbh_pdts[0][s]*Chem.MolFromSmiles(s).GetAtomWithIdx(0).GetTotalNumHs() \
                         for s in self.cbh_pdts[0].keys() if '[H][H]' not in smiles])
                     # Get number of H in target molecule
-                    rct_H = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
-                    num_sat = rct_H - pdt_H
+                    rct_h = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
+                    num_sat = rct_h - pdt_h
                 elif saturate != 1:
                     pdt_sat = sum([coeff*s.count(saturate_sym) for s, coeff in self.cbh_pdts[0].items()])
                     rct_sat = sum([coeff*s.count(saturate_sym) for s, coeff in self.cbh_rcts[0].items() if f'{saturate_sym}{saturate_sym}' not in s])
@@ -223,7 +224,7 @@ class buildCBH:
 
         # saturation atom parsing
         ptable = Chem.GetPeriodicTable()
-        if type(saturate) == str:
+        if isinstance(saturate, str):
             saturate = ptable.GetAtomicNumber(saturate)
         saturate_sym = ptable.GetElementSymbol(saturate)
 
@@ -233,17 +234,18 @@ class buildCBH:
         atom_symbols.remove('H')
         atom_symbols.remove('O')
         atom_symbols.remove('F')
-        CBH_0_F_cond = True not in [True for a in atom_symbols if a in self._smiles_h]
-        
+        CBH_0_f_cond = True not in [True for a in atom_symbols if a in self._smiles_h]
+
         cbh_pdts = {} # CBH level products
         cbh_rcts = {} # CBH level reactants
 
         # "important_atoms" are just non-saturated atoms
-        important_atoms = [atom for atom in self._mol_h.GetAtoms() if atom.GetAtomicNum() != saturate]
+        important_atoms = [atom for atom in self._mol_h.GetAtoms()
+                           if atom.GetAtomicNum() != saturate]
         important_idx = [atom.GetIdx() for atom in important_atoms]
 
         # Terminal atoms are those that only connected to one atom that is not the saturation atom
-        # Indices of atoms where branching occurs or is a terminal 
+        # Indices of atoms where branching occurs or is a terminal
         terminal_idx = []
         branch_idx = []
         branch_degrees = []
@@ -258,7 +260,7 @@ class buildCBH:
                 branch_idx += [atom.GetIdx()]
                 branch_degrees += [non_saturate]
             # terminal
-            elif non_saturate == 1: 
+            elif non_saturate == 1:
                 terminal_idx += [atom.GetIdx()]
 
         cbh_level = 0 # init
@@ -268,47 +270,56 @@ class buildCBH:
             # 1. CBH products
             new_branches = [] # initialize branching
             #   a) Even cbh level --> atom centric
-            if cbh_level % 2 == 0: 
+            if cbh_level % 2 == 0:
                 # Added important_idx instead of empty list
                 residuals = self.atom_centric(cbh_level/2, True, important_idx, saturate)
                 terminals = []
 
             #   b) Odd cbh level --> bond centric
-            else: 
+            else:
                 residuals = self.bond_centric(np.floor(cbh_level/2), True, saturate)
                 # if branch_idx has values
-                if len(branch_idx) != 0: 
+                if len(branch_idx) != 0:
                     branches = self.atom_centric(np.floor(cbh_level/2), True, branch_idx, saturate)
-                    for i in range(len(branches)):
+                    for i, _ in enumerate(branches):
                         for _ in range(branch_degrees[i]-2):
                             new_branches.append(branches[i])
-                    
+
                 # Account for terminal atoms
                 # if there are no terminal_idx (ie, ring), skip
                 if len(terminal_idx) != 0: 
-                    terminals = self.atom_centric(np.floor(cbh_level/2), True, terminal_idx, saturate)
+                    terminals = self.atom_centric(np.floor(cbh_level/2), 
+                                                  True, terminal_idx, saturate)
                 else:
                     terminals = []
-            
+
             # (i.e., C2F6 in product side for CH3CF3)
             if allow_overshoot:
-                # End loop if the target molecules shows up on the product side, allowing overshooting
+                # End loop if the target molecule appears on the product side, allowing overshooting
                 if self.smiles in set(residuals+terminals):
                     trigger = True
             else:
                 # End loop if the target molecules shows up on the product side
                 # The substructure search removes the possibilty of "overshooting" or "circularity" 
-                if True in [Chem.MolFromSmiles(r).HasSubstructMatch(self.mol) for r in set(residuals+terminals)]:
+                if True in [Chem.MolFromSmiles(r).HasSubstructMatch(self.mol) 
+                            for r in set(residuals+terminals)]:
                     trigger = True
 
             if trigger:
-                if saturate == 9 and CBH_0_F_cond and NumRadicalElectrons(self.mol)==0 and 'F' in self._smiles_h and 'C' in self._smiles_h and self.ignore_F2:
+                if (saturate == 9
+                    and CBH_0_f_cond
+                    and NumRadicalElectrons(self.mol)==0
+                    and 'F' in self._smiles_h
+                    and 'C' in self._smiles_h
+                    and self.ignore_F2):
                     # if saturation is fluorine and the only elements present are C H O or F
                     cbh_pdts[0], cbh_rcts[0] = self.CBH_0_F()
                 try:
                     del cbh_rcts[cbh_level]
                 except KeyError as e:
-                    raise KeyError(f'SMILES: "{self.smiles}" with CBH-{cbh_level}-{saturate_sym} does not exist. Consider whether this is possible.')
+                    raise KeyError(f'SMILES: "{self.smiles}" with \
+                                   CBH-{cbh_level}-{saturate_sym} does not exist. \
+                                    Consider whether this is possible.') from e
                 if cbh_rcts[0]['[H][H]'] == 0:
                     del cbh_rcts[0]['[H][H]']
                 break
@@ -320,22 +331,25 @@ class buildCBH:
             # 2. CBH reactants
             if cbh_level == 0:
                 # Get number of H in product (bakes in stoichiometry)
-                pdt_H = sum([cbh_pdts[0][smiles]*Chem.MolFromSmiles(smiles).GetAtomWithIdx(0).GetTotalNumHs() \
-                    for smiles in cbh_pdts[0].keys()])
+                pdt_h = sum([cbh_pdts[0][smiles]*Chem.MolFromSmiles(smiles).GetAtomWithIdx(0).GetTotalNumHs()
+                             for smiles in cbh_pdts[0].keys()])
                 # Get number of H in target molecule
-                rct_H = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
-                cbh_rcts[0] = {'[H][H]':(pdt_H - rct_H)/2}
-                
+                rct_h = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
+                cbh_rcts[0] = {'[H][H]':(pdt_h - rct_h)/2}
+
                 # Count number of saturation atoms to balance
                 if saturate != 1:
-                    pdt_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in cbh_pdts[0].items()])
-                    rct_sat = sum([coeff*smiles.count(saturate_sym) for smiles, coeff in cbh_rcts[0].items()])
+                    pdt_sat = sum([coeff*smiles.count(saturate_sym)
+                                   for smiles, coeff in cbh_pdts[0].items()])
+                    rct_sat = sum([coeff*smiles.count(saturate_sym)
+                                   for smiles, coeff in cbh_rcts[0].items()])
                     rct_sat += self.smiles.count(saturate_sym)
                     cbh_rcts[0][f'{saturate_sym}{saturate_sym}'] = (pdt_sat - rct_sat)/2
             else:
                 # Get the previous products + branch
                 if len(new_branches) != 0:
-                    cbh_rcts[cbh_level] = add_dicts(cbh_rcts[cbh_level], self.count_repeats(new_branches))
+                    cbh_rcts[cbh_level] = add_dicts(cbh_rcts[cbh_level],
+                                                    self.count_repeats(new_branches))
 
             # 3. Simplify chemical equations --> generate stoichiometry
             all_residuals = list(cbh_pdts[cbh_level].keys()) + list(cbh_rcts[cbh_level].keys())
@@ -360,7 +374,7 @@ class buildCBH:
         return cbh_pdts, cbh_rcts
 
 
-    def atom_centric(self, dist:int, return_smile=True, atom_indices=[], saturate=1) -> list:
+    def atom_centric(self, dist:int, return_smile=True, atom_indices=None, saturate=1) -> list:
         """
         Returns a list of RDkit molecule objects that are the residuals species 
         produced by atom-centric CBH steps.
@@ -387,6 +401,8 @@ class buildCBH:
                         residual species
         """
         residuals = [] # will hold residual species
+        if atom_indices is None:
+            atom_indices = []
 
         if len(atom_indices) != 0:
             idxs = atom_indices
@@ -410,8 +426,9 @@ class buildCBH:
                 # only get impl_valence for H or C since we only want to replace 
                 # H's that are connected to these atoms
                 # ie. we don't want to replace H on OH with F --> OF is a terrible prediction
-                impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in residual.GetAtoms() \
-                    if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() in (1,6)}
+                impl_valence = {atom.GetIdx() : atom.GetImplicitValence()
+                                for atom in residual.GetAtoms()
+                                if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() in (1,6)}
                 residual = self._replace_implicit_Hs(residual, impl_valence, saturate)
 
             if return_smile:
@@ -448,7 +465,8 @@ class buildCBH:
         dist += 1 # a specified distance of 0 implies the given edge --> this ensures this adjustment is made
         # cycle through edges
         for e in self._graph_h.es():
-            if self._graph_h.vs()[e.source]['AtomicNum'] == saturate or self._graph_h.vs()[e.target]['AtomicNum'] == saturate:
+            if saturate in (self._graph_h.vs()[e.source]['AtomicNum'],
+                            self._graph_h.vs()[e.target]['AtomicNum']):
                 continue # skip edge if it's connected to a saturation atom
             else:
                 # get shortest paths from edge source and target
@@ -497,10 +515,10 @@ class buildCBH:
         :rcts:  [dict] The reactant side of each CBH level \
                     {residual SMILES : num occurences}
         """
-        
+
         atoms = ['C','O','F','H']
         coeffs = {a:self._smiles_h.count(a) for a in atoms}
-        
+
         coeff_ch4 = coeffs['C'] - 1/4*coeffs['F']
         coeff_h2o = coeffs['O']
         coeff_cf4 = coeffs['F']/4
@@ -563,7 +581,7 @@ class buildCBH:
         return new_mol
 
     
-    def visualize(self, cbh_rung:int=[]):
+    def visualize(self, cbh_rung:int=None):
         """
         Visualize the CBH scheme in a jupyter notebook. Can show all or specific 
         CBH rungs.
@@ -577,8 +595,10 @@ class buildCBH:
         -------
         None
         """
+        if cbh_rung is None:
+            cbh_rung = []
 
-        if type(cbh_rung) != int:
+        if not isinstance(cbh_rung, int):
             cbh_levels = self.cbh_pdts.keys()
         else:
             cbh_levels = list(self.cbh_pdts.keys())
@@ -586,13 +606,14 @@ class buildCBH:
             try:
                 cbh_levels = [cbh_levels[cbh_rung]]
             except IndexError:
-                print(f'CBH rung {cbh_rung} does not exist for {self.smiles}.\nThe highest CBH rung for this species is: {max(cbh_levels)}')
+                print(f'CBH rung {cbh_rung} does not exist for {self.smiles}.\
+                      \nThe highest CBH rung for this species is: {max(cbh_levels)}')
                 return
 
         # cycle through each CBH rung
         for cbh_level in cbh_levels:
             self.__visualize(cbh_level)
-            
+
 
     def __visualize(self, cbh_level:int):
         """
@@ -612,7 +633,8 @@ class buildCBH:
 
         # Visualize reaction without atom indices
         # Create pandas df of reactant and products
-        max_num_mols = max([len(v) for v in self.cbh_pdts.values()]+[len(v) + 1 if i==0 else len(v) for i, v in enumerate(self.cbh_rcts.values())])
+        max_num_mols = max([len(v) for v in self.cbh_pdts.values()]
+                           +[len(v) + 1 if i==0 else len(v) for i, v in enumerate(self.cbh_rcts.values())])
 
         rct_df = DataFrame(self.cbh_rcts[cbh_level].items(), columns=['smiles', 'num'])
         if self.smiles_ads:
@@ -626,9 +648,9 @@ class buildCBH:
         
         print('\n-----------------------------------------------------------------------------------------------------\n')
         print(f'CBH RUNG {cbh_level}')
-        print(f'\nReactants:')
+        print('\nReactants:')
         display(PandasTools.FrameToGridImage(rct_df, legendsCol="num", subImgSize=(200,120), molsPerRow=max_num_mols))
-        print(f'\nProducts:')
+        print('\nProducts:')
         display(PandasTools.FrameToGridImage(pdt_df, legendsCol="num", subImgSize=(200,120), molsPerRow=max_num_mols))
 
 
@@ -650,8 +672,10 @@ def mol2graph(mol):
     # Gather atom/bond attributes
     # atom attributes: atom number, atomic number, atom symbol
     # bond attributes: atom 1 index, atom 2 index, atom bond type as number
-    atom_attributes = [(a.GetIdx(), a.GetAtomicNum(), a.GetSymbol(), a.GetNumRadicalElectrons()) for a in mol.GetAtoms()]
-    bond_attributes = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx(), b.GetBondType(), b.GetBondTypeAsDouble()) for b in mol.GetBonds()]
+    atom_attributes = [(a.GetIdx(), a.GetAtomicNum(),
+                        a.GetSymbol(), a.GetNumRadicalElectrons()) for a in mol.GetAtoms()]
+    bond_attributes = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx(),
+                        b.GetBondType(), b.GetBondTypeAsDouble()) for b in mol.GetBonds()]
     # generate chemical graph
     g = Graph()
     # Create vertices for each Atom
@@ -660,10 +684,10 @@ def mol2graph(mol):
     # Create edges for each Bond
     for b_attr in bond_attributes:
         g.add_edge(b_attr[0], b_attr[1], BondType=b_attr[2], BondTypeDouble=b_attr[3])
-    return g 
+    return g
 
 
-def graph2mol(graph, return_smiles=False): 
+def graph2mol(graph, return_smiles=False):
     """Graph to Molecule
     Converts undirected igraph object to RDkit.Chem Mol object.
     Sourced directly from: https://iwatobipen.wordpress.com/2018/05/30/active-learning-rdkit-chemoinformatics-ml/
@@ -727,7 +751,7 @@ def add_dicts(*dictionaries: dict) -> dict:
             # {key: [val1, val2]}
             dd[key].append(value)
     # add up the values for each key
-    out_dict = {key:sum(dd[key]) for key in dd.keys()}
+    out_dict = {key:sum(val) for key, val in dd.items()}
     # remove items where values = 0
     del_list = []
     for k, v in out_dict.items():
