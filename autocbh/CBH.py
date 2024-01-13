@@ -1,3 +1,4 @@
+""" Module for Connectivity-Based Hierarchy (CBH) scheme generation """
 from collections import defaultdict
 from rdkit import Chem
 from rdkit.Chem.Descriptors import NumRadicalElectrons
@@ -40,7 +41,7 @@ class buildCBH:
     visualize       Used to visualize CBH reactions in Jupyter Notebook. 
     """
 
-    def __init__(self, smiles:str, saturate=1, allow_overshoot=False, 
+    def __init__(self, smiles:str, saturate=1, allow_overshoot=False,
                  ignore_F2=True, surface_smiles:str=None):
         """
         Constructs the attributes of buildCBH class.
@@ -75,13 +76,16 @@ class buildCBH:
                 i.e., '[Pt]'
         """
         if smiles == '[H][H]':
-            raise KeyError('SMILES: "[H][H]". It is impossible to generate a CBH scheme for "[H][H]".')
+            raise KeyError('SMILES: "[H][H]". It is impossible to \
+                           generate a CBH scheme for "[H][H]".')
 
         if surface_smiles and surface_smiles not in smiles and '.' in smiles:
-            raise NameError('Cannot use a physiosorbed species with a surface that is not present in the SMILES string.')
+            raise NameError('Cannot use a physiosorbed species with a surface \
+                            that is not present in the SMILES string.')
         elif '.' in smiles and surface_smiles is None:
-            raise NameError('Cannot use a physiosorbed species without specifying a surface_smiles.')
-        
+            raise NameError('Cannot use a physiosorbed species without specifying \
+                            a surface_smiles.')
+
         if surface_smiles and surface_smiles in smiles:
             self.smiles_ads = Chem.CanonSmiles(smiles)
             num_components = self.smiles_ads.count('.') + 1
@@ -90,23 +94,28 @@ class buildCBH:
             try:
                 surface_smiles = Chem.CanonSmiles(surface_smiles)
             except Exception as exc:
-                raise ValueError(f'Arg "surface_smiles" must be a valid SMILES string. Instead, "{surface_smiles}" was given.') from exc
+                raise ValueError(f'Arg "surface_smiles" must be a valid SMILES string. \
+                                 Instead, "{surface_smiles}" was given.') from exc
             # make sure surface smiles is just an element
             try:
                 ptable = Chem.GetPeriodicTable()
                 ptable.GetAtomicNumber(surface_smiles.replace('[','').replace(']',''))
             except Exception as exc:
-                raise ValueError(f'Arg "surface_smiles" must be an element. Instead, "{surface_smiles}" was given.') from exc
+                raise ValueError(f'Arg "surface_smiles" must be an element. \
+                                 Instead, "{surface_smiles}" was given.') from exc
             self.surface_smiles = surface_smiles
-            
+
             # check the number of components
             if num_components > 2:
                 raise NameError('Cannot include more than 2 molecules to compute CBH scheme.')
             elif num_components == 2 and self.surface_smiles is None:
-                raise NameError('Cannot include more than 1 molecule and compute CBH scheme without specifying surface_smiles to which the molecule is phyisosorbed.')
+                raise NameError('Cannot include more than 1 molecule and compute CBH \scheme \
+                                without specifying surface_smiles to which the molecule is \
+                                phyisosorbed.')
             elif num_components == 2:
                 smiles_broken = self.smiles_ads.split('.')
-                smiles_broken_ind = [i for i, s in enumerate(smiles_broken) if s == self.surface_smiles]
+                smiles_broken_ind = [i for i, s in enumerate(smiles_broken) 
+                                     if s == self.surface_smiles]
                 del smiles_broken[smiles_broken_ind[0]]
                 smiles_broken = smiles_broken[0]
                 smiles = Chem.CanonSmiles(smiles_broken)
@@ -119,7 +128,7 @@ class buildCBH:
 
         self.graph = mol2graph(self.mol) # Graph representation of molecule
         self.graph_adj = np.array(self.graph.get_adjacency().data) # Graph Adjacency Matrix
-        self.graph_dist = np.array(self.graph.shortest_paths()) # Matrix holding distances between vertices
+        self.graph_dist = np.array(self.graph.shortest_paths()) # Matrix w/ distances bw vertices
 
         # Molecule attributes with explicit hydrogens
         self._mol_h = Chem.AddHs(self.mol)
@@ -133,51 +142,66 @@ class buildCBH:
         self.cbh_pdts, self.cbh_rcts = self.build_scheme(saturate=saturate, allow_overshoot=allow_overshoot)
         # Highest CBH rung
         self.highest_cbh = max(self.cbh_pdts.keys())
-        
+
         # for species with surfaces
         if self.smiles_ads and self.surface_smiles in self.smiles_ads:
             for rung in range(self.highest_cbh+1):
                 # make gas-phase species --> physiosorbed
-                self.cbh_pdts[rung] = {(Chem.CanonSmiles(s + '.' + self.surface_smiles) if self.surface_smiles not in s else s): coeff for s, coeff in self.cbh_pdts[rung].items()}
-                self.cbh_rcts[rung] = {(Chem.CanonSmiles(s + '.' + self.surface_smiles) if self.surface_smiles not in s else s): coeff for s, coeff in self.cbh_rcts[rung].items()}
-            
+                self.cbh_pdts[rung] = {(Chem.CanonSmiles(s + '.' + self.surface_smiles)
+                                        if self.surface_smiles not in s
+                                        else s): coeff
+                                        for s, coeff in self.cbh_pdts[rung].items()}
+                self.cbh_rcts[rung] = {(Chem.CanonSmiles(s + '.' + self.surface_smiles)
+                                        if self.surface_smiles not in s
+                                        else s): coeff
+                                        for s, coeff in self.cbh_rcts[rung].items()}
+
             # if adsorbate
             if '.' not in self.smiles_ads:
                 # Assumptions: adsorbate is attached to 1 surface
                 #     Saturation atom forms a diatomic molecule (coeff_physiosorbed)
                 #     Only one saturation atom adsorbs to the surface (coeff_adsorbed)
-                
-                if type(saturate) == str:
+
+                if isinstance(saturate, str):
                     saturate = Chem.GetPeriodicTable().GetAtomicNumber(saturate)
                 saturate_sym = Chem.GetPeriodicTable().GetElementSymbol(saturate)
 
                 # rcts - pdts for RHS of the linear system
-                rct_surf = sum((coeff for s, coeff in self.cbh_rcts[0].items() if '.' in s and ((saturate != 1 and f'{saturate_sym}{saturate_sym}' not in s) or (saturate == 1 and '[H][H]' not in s))))
+                rct_surf = sum((coeff for s, coeff in self.cbh_rcts[0].items()
+                                if ('.' in s
+                                    and ((saturate != 1 and f'{saturate_sym}{saturate_sym}' not in s)
+                                          or (saturate == 1 and '[H][H]' not in s)))))
                 pdt_surf = sum((coeff for s, coeff in self.cbh_pdts[0].items() if '.' in s))
                 num_surfs = 1 + rct_surf - pdt_surf
-                
+
                 if saturate == 1:
                     # Get number of H in product (bakes in stoichiometry)
-                    pdt_h = sum([self.cbh_pdts[0][s]*Chem.MolFromSmiles(s).GetAtomWithIdx(0).GetTotalNumHs() \
-                        for s in self.cbh_pdts[0].keys() if '[H][H]' not in smiles])
+                    pdt_h = sum(self.cbh_pdts[0][s]*Chem.MolFromSmiles(s).GetAtomWithIdx(0).GetTotalNumHs()
+                                for s in self.cbh_pdts[0].keys() if '[H][H]' not in smiles)
                     # Get number of H in target molecule
-                    rct_h = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
+                    rct_h = sum(a.GetTotalNumHs() for a in self.mol.GetAtoms())
                     num_sat = rct_h - pdt_h
                 elif saturate != 1:
-                    pdt_sat = sum([coeff*s.count(saturate_sym) for s, coeff in self.cbh_pdts[0].items()])
-                    rct_sat = sum([coeff*s.count(saturate_sym) for s, coeff in self.cbh_rcts[0].items() if f'{saturate_sym}{saturate_sym}' not in s])
+                    pdt_sat = sum(coeff*s.count(saturate_sym)
+                                   for s, coeff in self.cbh_pdts[0].items())
+                    rct_sat = sum(coeff*s.count(saturate_sym)
+                                   for s, coeff in self.cbh_rcts[0].items()
+                                   if f'{saturate_sym}{saturate_sym}' not in s)
                     rct_sat += self.smiles.count(saturate_sym)
                     num_sat = rct_sat - pdt_sat
                 b = np.array([[num_surfs], [num_sat]])
 
                 A_inv = np.array([[2,-1],[1,-1]]) # A = [[1, -1], [1, -2]]
-                
+
                 # Ax = b
                 coeff_adsorbed, coeff_physiosorbed = (A_inv @ b).T.tolist()[0]
-                
-                smiles_physiosorbed = [s for s in self.cbh_rcts[0].keys() if '.' in s and ((saturate != 1 and f'{saturate_sym}{saturate_sym}' in s) or (saturate == 1 and '[H][H]' in s))][0]
+
+                smiles_physiosorbed = [s for s in self.cbh_rcts[0].keys()
+                                       if '.' in s and ((saturate != 1
+                                                         and f'{saturate_sym}{saturate_sym}' in s)
+                                                        or (saturate == 1 and '[H][H]' in s))][0]
                 self.cbh_rcts[0][smiles_physiosorbed] = coeff_physiosorbed
-                
+
                 # saturate smiles with saturation atom
                 if ']' in self.surface_smiles and saturate == 1:
                     smiles_adsorbed = Chem.CanonSmiles(self.surface_smiles.replace(']','') + 'H]')
@@ -185,7 +209,7 @@ class buildCBH:
                     smiles_adsorbed = Chem.CanonSmiles(self.surface_smiles + 'H')
                 elif saturate != 1:
                     smiles_adsorbed = Chem.CanonSmiles(self.surface_smiles + saturate_sym)
-                
+
                 self.cbh_pdts[0][smiles_adsorbed] = coeff_adsorbed
                 del self.cbh_pdts[0][self.surface_smiles]
 
@@ -234,7 +258,7 @@ class buildCBH:
         atom_symbols.remove('H')
         atom_symbols.remove('O')
         atom_symbols.remove('F')
-        CBH_0_f_cond = True not in [True for a in atom_symbols if a in self._smiles_h]
+        cbh_0_f_cond = True not in [True for a in atom_symbols if a in self._smiles_h]
 
         cbh_pdts = {} # CBH level products
         cbh_rcts = {} # CBH level reactants
@@ -306,14 +330,14 @@ class buildCBH:
                     trigger = True
 
             if trigger:
-                if (saturate == 9
-                    and CBH_0_f_cond
-                    and NumRadicalElectrons(self.mol)==0
-                    and 'F' in self._smiles_h
-                    and 'C' in self._smiles_h
-                    and self.ignore_F2):
+                if all((saturate == 9,
+                        cbh_0_f_cond,
+                        NumRadicalElectrons(self.mol)==0,
+                        'F' in self._smiles_h,
+                        'C' in self._smiles_h,
+                        self.ignore_F2)):
                     # if saturation is fluorine and the only elements present are C H O or F
-                    cbh_pdts[0], cbh_rcts[0] = self.CBH_0_F()
+                    cbh_pdts[0], cbh_rcts[0] = self.cbh_0_f()
                 try:
                     del cbh_rcts[cbh_level]
                 except KeyError as e:
@@ -331,18 +355,18 @@ class buildCBH:
             # 2. CBH reactants
             if cbh_level == 0:
                 # Get number of H in product (bakes in stoichiometry)
-                pdt_h = sum([cbh_pdts[0][smiles]*Chem.MolFromSmiles(smiles).GetAtomWithIdx(0).GetTotalNumHs()
-                             for smiles in cbh_pdts[0].keys()])
+                pdt_h = sum(cbh_pdts[0][smiles]*Chem.MolFromSmiles(smiles).GetAtomWithIdx(0).GetTotalNumHs()
+                             for smiles in cbh_pdts[0].keys())
                 # Get number of H in target molecule
-                rct_h = sum([a.GetTotalNumHs() for a in self.mol.GetAtoms()])
+                rct_h = sum(a.GetTotalNumHs() for a in self.mol.GetAtoms())
                 cbh_rcts[0] = {'[H][H]':(pdt_h - rct_h)/2}
 
                 # Count number of saturation atoms to balance
                 if saturate != 1:
-                    pdt_sat = sum([coeff*smiles.count(saturate_sym)
-                                   for smiles, coeff in cbh_pdts[0].items()])
-                    rct_sat = sum([coeff*smiles.count(saturate_sym)
-                                   for smiles, coeff in cbh_rcts[0].items()])
+                    pdt_sat = sum(coeff*smiles.count(saturate_sym)
+                                   for smiles, coeff in cbh_pdts[0].items())
+                    rct_sat = sum(coeff*smiles.count(saturate_sym)
+                                   for smiles, coeff in cbh_rcts[0].items())
                     rct_sat += self.smiles.count(saturate_sym)
                     cbh_rcts[0][f'{saturate_sym}{saturate_sym}'] = (pdt_sat - rct_sat)/2
             else:
@@ -408,7 +432,7 @@ class buildCBH:
             idxs = atom_indices
         else: # compute subgraphs for all atoms in graph
             if saturate == 1:
-                # Even though we use the graph with explicit H's in the for loop, 
+                # Even though we use the graph with explicit H's in the for loop,
                 # the indices in graph_adj correspond exactly to the indices in the graph_adj_h case
                 idxs = range(len(self.graph_adj))
             else:
@@ -423,7 +447,7 @@ class buildCBH:
             # create rdkit mol objects from subgraph
             residual = graph2mol(self._graph_h.subgraph(atom_inds))
             if saturate != 1:
-                # only get impl_valence for H or C since we only want to replace 
+                # only get impl_valence for H or C since we only want to replace
                 # H's that are connected to these atoms
                 # ie. we don't want to replace H on OH with F --> OF is a terrible prediction
                 impl_valence = {atom.GetIdx() : atom.GetImplicitValence()
@@ -462,12 +486,14 @@ class buildCBH:
                             residual species
         """
         residuals = [] # will hold residual species
-        dist += 1 # a specified distance of 0 implies the given edge --> this ensures this adjustment is made
+        # a specified distance of 0 implies the given edge
+        # --> this ensures this adjustment is made
+        dist += 1
         # cycle through edges
         for e in self._graph_h.es():
             if saturate in (self._graph_h.vs()[e.source]['AtomicNum'],
                             self._graph_h.vs()[e.target]['AtomicNum']):
-                continue # skip edge if it's connected to a saturation atom
+                pass # skip edge if it's connected to a saturation atom
             else:
                 # get shortest paths from edge source and target
                 shortest_paths_source = self._graph_h.get_shortest_paths(e.source)
@@ -479,14 +505,16 @@ class buildCBH:
                 shortest_paths_source_refined = (shortest_paths_source[i] for i in shortest_paths_source_inds)
                 shortest_paths_target_refined = (shortest_paths_target[i] for i in shortest_paths_target_inds)
                 # define edge indices
-                edge_inds = list(set([x[-1] for x in shortest_paths_source_refined] + [x[-1] for x in shortest_paths_target_refined]))
+                edge_inds = list(set([x[-1] for x in shortest_paths_source_refined]
+                                     + [x[-1] for x in shortest_paths_target_refined]))
                 # create rdkit mol objects from subgraph --> MUST be no explicit hydrogens (except for radicals)
                 residual = graph2mol(self._graph_h.subgraph(edge_inds))
                 if saturate != 1:
                     # {atom index : implicit valence} for carbon atoms that have more than 1 implicit hydrogen
                     #   (possibly too specific)
-                    impl_valence = {atom.GetIdx() : atom.GetImplicitValence() for atom in residual.GetAtoms() \
-                        if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() == 6}
+                    impl_valence = {atom.GetIdx() : atom.GetImplicitValence()
+                                    for atom in residual.GetAtoms()
+                                    if atom.GetImplicitValence() > 0 and atom.GetAtomicNum() == 6}
                     # replace implicit hydrogens with the saturation atom
                     residual = self._replace_implicit_Hs(residual, impl_valence, saturate)
                 if return_smile:
@@ -496,7 +524,7 @@ class buildCBH:
         return residuals
 
 
-    def CBH_0_F(self) -> tuple:
+    def cbh_0_f(self) -> tuple:
         """
         Calculates an alternative isogyric fluorinated CBH-0 scheme that 
         avoids the use of F2.
@@ -564,7 +592,7 @@ class buildCBH:
         -------
         :new_mol:   [RDkit Mol] Mol with replaced atoms
         """
-        
+
         new_mol = Chem.RWMol(Chem.AddHs(mol))
         for i_atom, impl_val in impl_valence_dict.items():
             atom =  new_mol.GetAtomWithIdx(i_atom)
@@ -580,7 +608,7 @@ class buildCBH:
         Chem.SanitizeMol(new_mol)
         return new_mol
 
-    
+
     def visualize(self, cbh_rung:int=None):
         """
         Visualize the CBH scheme in a jupyter notebook. Can show all or specific 
@@ -633,8 +661,10 @@ class buildCBH:
 
         # Visualize reaction without atom indices
         # Create pandas df of reactant and products
-        max_num_mols = max([len(v) for v in self.cbh_pdts.values()]
-                           +[len(v) + 1 if i==0 else len(v) for i, v in enumerate(self.cbh_rcts.values())])
+        max_num_mols = max([len(v)
+                            for v in self.cbh_pdts.values()]
+                           + [len(v) + 1 if i==0 else len(v)
+                             for i, v in enumerate(self.cbh_rcts.values())])
 
         rct_df = DataFrame(self.cbh_rcts[cbh_level].items(), columns=['smiles', 'num'])
         if self.smiles_ads:
@@ -645,13 +675,18 @@ class buildCBH:
         PandasTools.AddMoleculeColumnToFrame(rct_df, smilesCol='smiles')
         pdt_df = DataFrame(self.cbh_pdts[cbh_level].items(), columns=['smiles', 'num'])
         PandasTools.AddMoleculeColumnToFrame(pdt_df, smilesCol='smiles')
-        
-        print('\n-----------------------------------------------------------------------------------------------------\n')
+
+        print('\n--------------------------------------------------------\
+              ---------------------------------------------\n')
         print(f'CBH RUNG {cbh_level}')
         print('\nReactants:')
-        display(PandasTools.FrameToGridImage(rct_df, legendsCol="num", subImgSize=(200,120), molsPerRow=max_num_mols))
+        display(PandasTools.FrameToGridImage(rct_df, legendsCol="num", 
+                                             subImgSize=(200,120), 
+                                             molsPerRow=max_num_mols))
         print('\nProducts:')
-        display(PandasTools.FrameToGridImage(pdt_df, legendsCol="num", subImgSize=(200,120), molsPerRow=max_num_mols))
+        display(PandasTools.FrameToGridImage(pdt_df, legendsCol="num", 
+                                             subImgSize=(200,120), 
+                                             molsPerRow=max_num_mols))
 
 
 def mol2graph(mol):
@@ -716,14 +751,14 @@ def graph2mol(graph, return_smiles=False):
         if v['NumRad'] != 0:
             # Set the num of radical electrons
             mol.GetAtomWithIdx(atom_num).SetNumRadicalElectrons(v['NumRad'])
-            
+
         atom_num += 1
     # Add each edge as a Bond
     for e in graph.es():
         mol.AddBond(e.source, e.target, e['BondType'])
     mol = mol.GetMol()
     Chem.SanitizeMol(mol) # ensure implicit hydrogens are accounted
-    
+
     # Generates SMILES str
     if return_smiles:
         # will always return SMILES string with implicit hydrogens
