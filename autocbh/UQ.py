@@ -1,11 +1,13 @@
-import numpy as np
-from autocbh.calcCBH import calcCBH
-import autocbh.CBH as CBH
-import os, sys
-from rdkit.Chem import MolFromSmiles, AddHs
+""" Module for uncertainty quantification / propagation """
+import os
+import sys
 from copy import copy
-from tqdm import tqdm
 from itertools import product
+from tqdm import tqdm
+import numpy as np
+from rdkit.Chem import MolFromSmiles, AddHs
+from autocbh.calcCBH import calcCBH
+from autocbh import CBH
 
 class uncertainty_quantification:
     """
@@ -126,20 +128,20 @@ class uncertainty_quantification:
     :cbh_sat_combos:        [list]
         Holds different saturation combinations
     """
-    def __init__(self, num_simulations=1000, calcCBH_obj:calcCBH=None, 
-                    methods: list=[], 
-                    dataframe_path:str=None, 
-                    method_keys_path:str='data/methods_keys.yaml', 
+    def __init__(self, num_simulations=1000, calcCBH_obj:calcCBH=None,
+                    methods: list=[],
+                    dataframe_path:str=None,
+                    method_keys_path:str='data/methods_keys.yaml',
                     rankings_path:str='data/rankings.yaml',
-                    alternative_rxn_path:str=None, 
-                    saturate:list=[1,9], 
-                    priority:str="abs_coeff", 
-                    max_rung:int=None, 
-                    alt_rxn_option:str=None, 
-                    force_generate_database:bool=False, 
+                    alternative_rxn_path:str=None,
+                    saturate:list=[1,9],
+                    priority:str="abs_coeff",
+                    max_rung:int=None,
+                    alt_rxn_option:str=None,
+                    force_generate_database:bool=False,
                     force_generate_alternative_rxn:bool=False,
                     zero_out_heats:bool=False):
-        
+
         self.methods = methods
         self.dataframe_path = dataframe_path
         self.method_keys_path = method_keys_path
@@ -166,7 +168,7 @@ class uncertainty_quantification:
                                     force_generate_database=self.force_generate_database, 
                                     force_generate_alternative_rxn=self.force_generate_alternative_rxn, 
                                     zero_out_heats=self.zero_out_heats)
-        
+
         self.species = copy(self.calcCBH.energies.index.values)
 
         self.non_nan_species = self.calcCBH.energies.loc[~np.isnan(self.calcCBH.energies.loc[:, 'uncertainty'].values), 'uncertainty'].index.values
@@ -182,8 +184,8 @@ class uncertainty_quantification:
         self.simulation_results = 0
         self.cbh_selection_combos = None
         self.cbh_sat_combos = None
-    
-    
+
+
     def run(self):
         """
         Run uncertainty quantification operation in a vectorized manner.
@@ -219,10 +221,10 @@ class uncertainty_quantification:
         for s in pbar:
             pbar.set_description(f'Number of Species')
             i_s = self.calcCBH.energies.index.get_loc(s)
-            weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[:, 1:], self.calcCBH.energies.index)
+            _, weighted_hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[:, 1:], self.calcCBH.energies.index)
 
-            self.simulation_results[i_s, 1:] = weighted_Hf
-    
+            self.simulation_results[i_s, 1:] = weighted_hf
+
 
     def run_cbh_selection(self, alt_rxn_option:list=None, priority:list=None):
         """
@@ -255,7 +257,7 @@ class uncertainty_quantification:
         if alt_rxn_option is not None:
             for option in alt_rxn_option:
                 if option:
-                    if type(option)!= str:
+                    if not isinstance(option, str):
                         raise TypeError('List items within "alt_rxn_option" must be a str. If str, the options are: "ignore", "best_alt", "avg_alt", "include".')
                     elif option not in alt_rxn_option_list_check:
                         raise NameError('The available options for items within "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
@@ -264,7 +266,7 @@ class uncertainty_quantification:
             alt_rxn_option_list = ['ignore', 'best_alt', 'avg_alt', 'include']
         else:
             alt_rxn_option_list = alt_rxn_option
-        
+
         if not isinstance(priority, (list, type(None))):
             raise TypeError(f'Arg "priority" must either be of type List or NoneType. Instead, {type(priority)} was given.')
         priority_list = ["abs_coeff", "rel_coeff", "rung"]
@@ -276,7 +278,7 @@ class uncertainty_quantification:
                     raise NameError(f'The available options for arg "priority" are: "abs_coeff", "rel_coeff", "rung". {p} was given instead.')
         else:
             priority = ["abs_coeff", "rel_coeff", "rung"]
-        
+
         combos = list(product(alt_rxn_option_list, priority))
 
         sorted_species = sorted(self.calcCBH.energies[self.calcCBH.energies['uncertainty'].isna()].index.values, key=self.simple_sort)
@@ -295,9 +297,9 @@ class uncertainty_quantification:
             # cycle through molecules from smallest to largest
             for s in sorted_species:
                 i_s = self.calcCBH.energies.index.get_loc(s)
-                weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[c, :, 1:], self.calcCBH.energies.index)
+                _, weighted_hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[c, :, 1:], self.calcCBH.energies.index)
 
-                self.simulation_results[c, i_s, 1:] = weighted_Hf
+                self.simulation_results[c, i_s, 1:] = weighted_hf
             self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
             self.calcCBH.rxns = {}
 
@@ -312,11 +314,11 @@ class uncertainty_quantification:
         """
         alt_rxn_option_list_check = ['ignore', 'best_alt','avg_alt', 'include']
         if alt_rxn_option:
-            if type(alt_rxn_option)!= str:
+            if not isinstance(alt_rxn_option, str):
                 raise TypeError('Arg "alt_rxn_option" must be a str. The options are: "ignore", "best_alt", "avg_alt", "include".')
             elif alt_rxn_option not in alt_rxn_option_list_check:
                 raise NameError('The available options for "alt_rxn_option" are: "ignore", "best_alt", "avg_alt", "include".')
-        
+
         priority_list = ["abs_coeff", "rel_coeff", "rung"]
         if not isinstance(priority, str):
             raise TypeError(f'Arg "priority" must be a str. Instead, {type(priority)} was given. The options are: "abs_coeff", "rel_coeff", "rung".')
@@ -345,16 +347,16 @@ class uncertainty_quantification:
             # cycle through molecules from smallest to largest
             for s in sorted_species:
                 i_s = self.calcCBH.energies.index.get_loc(s)
-                weighted_Hrxn, weighted_Hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[sat_i, :, 1:], self.calcCBH.energies.index)
+                _, weighted_hf = self.calcCBH.calc_Hf_from_source_vectorized(s, self.simulation_results[sat_i, :, 1:], self.calcCBH.energies.index)
 
-                self.simulation_results[sat_i, i_s, 1:] = weighted_Hf
+                self.simulation_results[sat_i, i_s, 1:] = weighted_hf
             
             self.calcCBH.energies.loc[self.calcCBH.energies['uncertainty'].isna(), 'source'] = np.nan
             self.calcCBH.rxns = {}
 
         self.cbh_sat_combos = sats
         return sats
-    
+
 
     def simple_sort(self, x):
         """Sorting algorithm used for smallest to largest

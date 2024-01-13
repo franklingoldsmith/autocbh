@@ -1,3 +1,4 @@
+""" Module for thermochemical network generation """
 import os
 import numpy as np
 from rdkit import Chem
@@ -10,7 +11,8 @@ from autocbh import CBH, calcCBH
 
 class thermochemical_network:
 
-    def __init__(self, species:str or list or calcCBH.calcCBH, max_rung:int=np.inf, saturate:int or str=1, surface_smiles:str=None, use_decomposed_rxns:bool=False):
+    def __init__(self, species:str or list or calcCBH.calcCBH, max_rung:int=np.inf,
+                 saturate:int or str=1, surface_smiles:str=None, use_decomposed_rxns:bool=False):
         """
         Class to build and visualize thermochemical network.
         In other words, see what molecules depend on one another using the CBH method.
@@ -64,7 +66,8 @@ class thermochemical_network:
                 raise NameError('Arg "energies_df" DataFrame must have the method of \
                                 ∆Hf computation in a column named "source".')
             self._uses_dataframe = True
-            smiles2source = dict(zip(list(species.energies.index), species.energies.loc[:,'source'].values.tolist()))
+            smiles2source = dict(zip(list(species.energies.index),
+                                     species.energies.loc[:,'source'].values.tolist()))
             self.species = list(smiles2source.keys())
             self.calcCBH_rxns = species.rxns
 
