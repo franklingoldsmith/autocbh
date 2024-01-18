@@ -34,7 +34,7 @@ conda create -n autocbh python=3.9 numpy=1.23 pandas=1.4 rdkit=2022.03.5 python-
 ### 3. Perform a developer install
 Perform a developer install once inside the autoCBH directory.
 ```
-cd autoCBH
+cd autocbh
 python -m pip install -e .
 ```
 
