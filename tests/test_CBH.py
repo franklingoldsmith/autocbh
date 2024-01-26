@@ -1,3 +1,4 @@
+""" Test suite for CBH.py """
 #########################
 # Test Suite for CBH.py #
 #########################

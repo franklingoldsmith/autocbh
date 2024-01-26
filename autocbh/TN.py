@@ -1,4 +1,4 @@
-""" Module for thermochemical network generation """
+""" Module for thermochemical network generation. """
 import os
 import numpy as np
 from rdkit import Chem

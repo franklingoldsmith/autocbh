@@ -1,3 +1,4 @@
+""" Test suite for molData.py """
 #############################
 # Test Suite for data.molData.py #
 #############################

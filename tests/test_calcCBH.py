@@ -1,4 +1,4 @@
-""" Test suite module for calcCBH"""
+""" Test suite module for calcCBH """
 #############################
 # Test Suite for calcCBH.py #
 #############################

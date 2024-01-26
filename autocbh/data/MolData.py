@@ -1,10 +1,11 @@
-from rdkit import Chem
-import yaml
+""" Module for data handling. """
 import os
 import sys
 sys.path.append('.')
+import yaml
 import pandas as pd
 from numpy import nan, isnan
+from rdkit import Chem
 
 pd.set_option('display.float_format', '{:.6f}'.format)
 

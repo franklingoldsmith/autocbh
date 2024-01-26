@@ -1,3 +1,4 @@
+""" Module to hold cutomizeable functions for heat of reaction computations. """
 # ANL0
 def anl0_hrxn(del_nrg: dict) -> float:
     """

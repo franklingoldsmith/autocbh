@@ -1,4 +1,4 @@
-""" Module for uncertainty quantification / propagation """
+""" Module for uncertainty quantification / propagation. """
 import os
 import sys
 from copy import copy

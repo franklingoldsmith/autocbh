@@ -1,4 +1,7 @@
-""" calcCBH module holding calcCBH class """
+"""
+Module holds the calcCBH class used to compute heats of formation
+in an automated fashion.
+"""
 import os
 from itertools import compress
 from copy import copy

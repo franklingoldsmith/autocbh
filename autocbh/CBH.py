@@ -1,4 +1,4 @@
-""" Module for Connectivity-Based Hierarchy (CBH) scheme generation """
+""" Module for Connectivity-Based Hierarchy (CBH) scheme generation. """
 from collections import defaultdict
 from rdkit import Chem
 from rdkit.Chem.Descriptors import NumRadicalElectrons
